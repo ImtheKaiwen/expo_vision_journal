@@ -18,7 +18,12 @@ import { Feather } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useIsFocused } from '@react-navigation/native';
 import JournalCalendarView from '../components/JournalCalendarView';
-import { getJournalEntries, setJournalEntries, updateStreakOnJournalSave } from '../storage';
+import Heatmap from '../components/Heatmap';
+import JournalWriteModal from '../components/JournalWriteModal';
+import ShareStreakCard from '../components/ShareStreakCard';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import { getJournalEntries, setJournalEntries, updateStreakOnJournalSave, getStreak, getAppSettings } from '../storage';
 import {
   addCalendarMonths,
   countEntriesByDay,
@@ -37,7 +42,12 @@ export default function JournalScreen() {
   const [savedEntries, setSavedEntries] = useState([]);
   const [filterText, setFilterText] = useState('');
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [writeModalVisible, setWriteModalVisible] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [streakInfo, setStreakInfo] = useState({ count: 0 });
+  const [appSettings, setAppSettings] = useState(null);
+  const viewShotRef = useRef(null);
+  const inviteShotRef = useRef(null);
   const [editText, setEditText] = useState('');
   const [cursor, setCursor] = useState(() => {
     const n = new Date();
@@ -53,7 +63,11 @@ export default function JournalScreen() {
   const [selectedIds, setSelectedIds] = useState(new Set());
 
   useEffect(() => {
-    if (isFocused) loadEntries();
+    if (isFocused) {
+      loadEntries();
+      loadStreak();
+      getAppSettings().then(setAppSettings);
+    }
   }, [isFocused]);
 
   // Exit selection mode when leaving
@@ -67,6 +81,11 @@ export default function JournalScreen() {
   const loadEntries = async () => {
     const list = await getJournalEntries();
     setSavedEntries(list);
+  };
+
+  const loadStreak = async () => {
+    const s = await getStreak();
+    setStreakInfo(s);
   };
 
   const saveEntry = async () => {
@@ -179,16 +198,49 @@ export default function JournalScreen() {
     Alert.alert(t('copiedTitle'), `${entriesForSelectedDay.length} ${t('journalsCopied')}`);
   };
 
-  const renderRightActions = () => (
-    <View style={styles.deleteAction}>
+  const stats = useMemo(() => {
+    const counts = [0, 0, 0, 0, 0, 0, 0]; // 0: Sun, 1: Mon...
+    savedEntries.forEach(e => {
+      const dt = new Date(e.createdAt || 0);
+      if (!Number.isNaN(dt.getTime())) {
+        counts[dt.getDay()]++;
+      }
+    });
+    
+    let maxVal = -1;
+    let maxIdx = -1;
+    counts.forEach((v, i) => {
+      if (v >= maxVal) {
+        maxVal = v;
+        maxIdx = i;
+      }
+    });
+
+    const dayLabels = t('fullDays').split(',');
+    return {
+      total: savedEntries.length,
+      topDay: maxVal > 0 ? dayLabels[maxIdx] : '-',
+    };
+  }, [savedEntries, t]);
+
+  const renderRightActions = (progress, dragX, item) => (
+    <TouchableOpacity 
+      style={styles.deleteAction} 
+      onPress={() => deleteEntry(item.id)}
+    >
       <Feather name="trash-2" size={24} color="#fff" />
-    </View>
+      <Text style={styles.swipeLabel}>{t('delete')}</Text>
+    </TouchableOpacity>
   );
 
-  const renderLeftActions = () => (
-    <View style={styles.copyAction}>
+  const renderLeftActions = (progress, dragX, item) => (
+    <TouchableOpacity 
+      style={styles.copyAction} 
+      onPress={() => copyEntry(item.text, item.id)}
+    >
       <Feather name="copy" size={24} color="#fff" />
-    </View>
+      <Text style={styles.swipeLabel}>{t('copy')}</Text>
+    </TouchableOpacity>
   );
 
   const filteredEntries = savedEntries.filter(
@@ -232,16 +284,53 @@ export default function JournalScreen() {
     setSelectedDay(null);
   };
 
+  const setModeHeatmap = () => {
+    setViewMode('heatmap');
+    setSelectedDay(null);
+  };
+
+  const handleShareStreak = async () => {
+    try {
+      const uri = await viewShotRef.current.capture();
+      // Seri paylaşımı normal, sadece görsel (linksiz)
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'Serini Paylaş!',
+        UTI: 'public.png',
+      });
+    } catch (e) {
+      console.log('Share error:', e);
+      Alert.alert('Hata', 'Paylaşım hazırlanırken bir sorun oluştu.');
+    }
+  };
+
+  const handleInviteFriends = async () => {
+    try {
+      const uri = await inviteShotRef.current.capture();
+      // Davet paylaşımı: Görsel + Mesaj (Link içeren)
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: t('inviteTitle'),
+        UTI: 'public.png',
+      });
+      // Not: expo-sharing görselle birlikte metni her zaman desteklemeyebilir, 
+      // bu yüzden sistem paylaşımı yerine metni panoya da kopyalayabiliriz veya 
+      // Sharing.shareAsync sonrası bir Share.share metni çıkarabiliriz.
+      // Ancak çoğu modern platform görselle birlikte gelen metni kabul eder.
+    } catch (e) {
+      console.log('Invite error:', e);
+      Alert.alert('Hata', 'Davet hazırlanırken bir sorun oluştu.');
+    }
+  };
+
   const renderEntryCard = (item) => (
     <Swipeable
       key={item.id}
       ref={(ref) => swipeableRefs.current.set(item.id, ref)}
-      renderRightActions={selectionMode ? undefined : renderRightActions}
-      rightThreshold={width / 2.5}
-      onSwipeableRightOpen={() => deleteEntry(item.id)}
-      renderLeftActions={selectionMode ? undefined : renderLeftActions}
-      leftThreshold={width / 2.5}
-      onSwipeableLeftOpen={() => copyEntry(item.text, item.id)}
+      renderRightActions={selectionMode ? undefined : (progress, dragX) => renderRightActions(progress, dragX, item)}
+      rightThreshold={40}
+      renderLeftActions={selectionMode ? undefined : (progress, dragX) => renderLeftActions(progress, dragX, item)}
+      leftThreshold={40}
       enabled={!selectionMode}
     >
       <TouchableOpacity
@@ -327,6 +416,15 @@ export default function JournalScreen() {
               {t('calendarMode')}
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeChip, viewMode === 'heatmap' && styles.modeChipActive]}
+            onPress={setModeHeatmap}
+          >
+            <Feather name="activity" size={16} color={viewMode === 'heatmap' ? '#000' : '#A0A0A0'} />
+            <Text style={[styles.modeChipText, viewMode === 'heatmap' && styles.modeChipTextActive]}>
+              Heatmap
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {viewMode === 'list' ? (
@@ -349,55 +447,42 @@ export default function JournalScreen() {
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
         >
-          <View style={styles.writeCard}>
-            <Text style={styles.writeCardTitle}>{t('whatHappened')}</Text>
-            <View style={styles.textAreaWrapper}>
-                  <TextInput
-                    style={styles.textArea}
-                    multiline
-                    placeholder={t('journalPlaceholder')}
-                    placeholderTextColor="#555"
-                    value={entry}
-                    onChangeText={setEntry}
-                    onFocus={() => {
-                      // Scroll to top of write card immediately
-                      setTimeout(() => {
-                        mainScrollRef.current?.scrollTo({ y: 0, animated: true });
-                      }, 100);
-                    }}
-                    onContentSizeChange={(e) => {
-                      if (entry.length > 0) {
-                        mainScrollRef.current?.scrollTo({
-                          y: e.nativeEvent.contentSize.height,
-                          animated: true,
-                        });
-                      }
-                    }}
-                  />
-            </View>
-            <View style={styles.writeActionsRow}>
-              {entry.trim().length > 0 && (
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.clearButton]}
-                  onPress={() => {
-                    Alert.alert(t('areYouSure'), t('deleteConfirm'), [
-                      { text: t('cancel'), style: 'cancel' },
-                      { text: t('delete'), style: 'destructive', onPress: () => setEntry('') },
-                    ]);
-                  }}
-                >
-                  <Feather name="trash-2" size={18} color="#fff" />
-                  <Text style={styles.clearButtonText}>{t('clear')}</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={[styles.actionButton, { flex: 1 }]} onPress={saveEntry}>
-                <Feather name="check" size={18} color="#000" />
-                <Text style={styles.actionButtonText}>{t('save')}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          {/* Write Card Removed for FAB/Modal system */}
 
-          {viewMode === 'calendar' ? (
+          {viewMode === 'heatmap' ? (
+            <>
+              <Heatmap entries={savedEntries} />
+              <Text style={styles.calendarHint}>{t('heatmapHint')}</Text>
+              
+              <Text style={styles.statsTitle}>{t('statsTitle')}</Text>
+              <View style={styles.statsRow}>
+                <View style={[styles.statCard, { position: 'relative' }]}>
+                  <Feather name="zap" size={20} color="#FFD700" />
+                  <Text style={styles.statValue}>{streakInfo.count || 0}</Text>
+                  <Text style={styles.statLabel}>{t('currStreak')}</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <Feather name="edit-3" size={20} color="#4CAF50" />
+                  <Text style={styles.statValue}>{stats.total}</Text>
+                  <Text style={styles.statLabel}>{t('totalEntries')}</Text>
+                </View>
+              </View>
+              
+              <View style={styles.statCardLarge}>
+                <View style={styles.statCardLargeHeader}>
+                  <Feather name="bar-chart-2" size={24} color="#2196F3" />
+                  <Text style={styles.statLabelLarge}>{t('mostActiveDay')}</Text>
+                </View>
+                <Text style={styles.statValueLarge}>{stats.topDay}</Text>
+                <Text style={[
+                  styles.statHintLarge, 
+                  stats.topDay !== '-' && { color: '#4CAF50', fontWeight: '700' }
+                ]}>
+                  {stats.topDay === '-' ? t('notEnoughData') : t('mostActiveDayFull')}
+                </Text>
+              </View>
+            </>
+          ) : viewMode === 'calendar' ? (
             <>
               <View style={styles.calendarCard}>
                 <JournalCalendarView
@@ -429,30 +514,89 @@ export default function JournalScreen() {
               )}
             </>
           ) : (
-            filteredEntries.map((item) => renderEntryCard(item))
+            filteredEntries.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Feather name="feather" size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
+                <Text style={styles.emptyText}>{t('journalNoEntryList') || 'Henüz kayıt yok. Yazmaya başlamak için tüy ikonuna tıklayın.'}</Text>
+              </View>
+            ) : (
+              filteredEntries.map((item) => renderEntryCard(item))
+            )
           )}
 
           <View style={{ height: 100 }} />
         </ScrollView>
 
+        {/* Floating Action Button for writing */}
+        {!selectionMode && (
+          <TouchableOpacity 
+            style={styles.fab} 
+            onPress={() => setWriteModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Feather name="feather" size={28} color="#000" />
+          </TouchableOpacity>
+        )}
+
+        {/* Modal for writing */}
+        <JournalWriteModal
+          visible={writeModalVisible}
+          onClose={() => setWriteModalVisible(false)}
+          onSave={async (text) => {
+            const now = new Date();
+            const newEntry = {
+              id: Date.now().toString(),
+              text: text,
+              date: getLocalDateString(),
+              createdAt: now.toISOString(),
+            };
+            const updatedEntries = [newEntry, ...savedEntries];
+            await setJournalEntries(updatedEntries);
+            setSavedEntries(updatedEntries);
+            await updateStreakOnJournalSave();
+          }}
+        />
+
         {/* Selection mode bottom bar */}
         {selectionMode && (
           <View style={styles.selectionBar}>
             <TouchableOpacity style={styles.selectionBarBtn} onPress={selectAllVisible}>
-              <Feather name="check-circle" size={18} color="#fff" />
+              <Feather name="check-square" size={18} color="#000" />
               <Text style={styles.selectionBarBtnText}>{t('selectAll')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.selectionBarBtn, styles.selectionBarCopyBtn]}
-              onPress={copySelected}
-            >
+            <TouchableOpacity style={styles.selectionBarBtn} onPress={copySelected}>
               <Feather name="copy" size={18} color="#000" />
-              <Text style={styles.selectionBarCopyText}>
-                {t('copySelected')} ({selectedIds.size})
-              </Text>
+              <Text style={styles.selectionBarBtnText}>{t('copySelected')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.selectionBarBtn, { backgroundColor: '#F44336' }]} onPress={deleteBatch}>
+              <Feather name="trash-2" size={18} color="#fff" />
+              <Text style={[styles.selectionBarBtnText, { color: '#fff' }]}>{t('delete')}</Text>
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Hidden ViewShot component for sharing */}
+        <View style={{ position: 'absolute', left: -2000, top: -2000 }}>
+          <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1.0 }}>
+            <ShareStreakCard 
+              streak={streakInfo.count || 0} 
+              userName={appSettings?.userName} 
+              t={t} 
+              type="streak"
+            />
+          </ViewShot>
+        </View>
+
+        <View style={{ position: 'absolute', left: -2000, top: -2000 }}>
+          <ViewShot ref={inviteShotRef} options={{ format: 'png', quality: 1.0 }}>
+            <ShareStreakCard 
+              streak={0} 
+              userName={appSettings?.userName} 
+              t={t} 
+              type="invite"
+            />
+          </ViewShot>
+        </View>
       </View>
 
       <Modal visible={editModalVisible} animationType="slide" transparent>
@@ -629,6 +773,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     marginRight: 15,
   },
+  swipeLabel: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 8 },
   selectionBar: {
     position: 'absolute',
     bottom: 95,
@@ -681,4 +826,133 @@ const styles = StyleSheet.create({
   editBtn: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12 },
   editBtnTextLight: { color: '#fff', fontWeight: '600' },
   editBtnTextDark: { color: '#000', fontWeight: '600' },
+  fab: {
+    position: 'absolute',
+    bottom: 110, // Tab barın üzerinde
+    right: 24,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    zIndex: 99,
+  },
+  emptyContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    color: '#555',
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 40,
+  },
+  statsTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 24,
+    marginBottom: 16,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 20,
+    padding: 16,
+    alignItems: 'center',
+    gap: 6,
+  },
+  statValue: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  statLabel: {
+    color: '#A0A0A0',
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  statCardLarge: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  statCardLargeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  statLabelLarge: {
+    color: '#A0A0A0',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  statValueLarge: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '800',
+    marginVertical: 4,
+  },
+  statHintLarge: {
+    color: '#4CAF50',
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  statShareBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 12,
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  inviteFriendsBtn: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 24,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 40,
+    borderWidth: 1,
+    borderColor: '#333',
+    gap: 16,
+  },
+  inviteBtnIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#9C27B0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteBtnTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  inviteBtnSubtitle: {
+    color: '#A0A0A0',
+    fontSize: 12,
+    marginTop: 2,
+  },
 });

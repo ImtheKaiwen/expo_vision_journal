@@ -172,7 +172,18 @@ export default function App() {
   }, [bootReady, authMethod, isAuthenticated, isOnboarded]);
 
   if (!bootReady) {
-    return <View style={styles.bootSplash} />;
+    return (
+      <View style={styles.bootSplash}>
+        <Animated.Image 
+          source={require('./assets/icon.png')} 
+          style={[styles.splashIcon, { opacity: fadeAnim }]} 
+          resizeMode="contain"
+        />
+        <Animated.Text style={[styles.splashText, { opacity: fadeAnim }]}>
+          Gününüzü planlayın
+        </Animated.Text>
+      </View>
+    );
   }
 
   const renderContent = () => {
@@ -264,4 +275,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     position: 'absolute',
   },
+  bootSplash: { flex: 1, backgroundColor: '#121212', justifyContent: 'center', alignItems: 'center' },
+  splashIcon: { width: 120, height: 120, marginBottom: 24 },
+  splashText: { color: '#fff', fontSize: 18, fontWeight: '600', letterSpacing: 1 },
 });

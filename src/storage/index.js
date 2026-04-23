@@ -8,7 +8,7 @@ export const KEYS = {
   APP_SETTINGS: '@app_settings',
 };
 
-const DEFAULT_APP_SETTINGS = {
+export const DEFAULT_APP_SETTINGS = {
   biometricEnabled: true, // Legacy compatibility, authMethod is main
   authMethod: 'biometric', // 'biometric' | 'pin' | 'none'
   pinCode: null,
@@ -16,6 +16,7 @@ const DEFAULT_APP_SETTINGS = {
   language: 'tr',
   notificationHour: 9,
   notificationMinute: 0,
+  userName: '',
 };
 
 export async function getAppSettings() {

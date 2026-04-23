@@ -227,14 +227,25 @@ export default function VisionScreen() {
   const logScore = async (score) => {
     if (!scoringVisionId) return;
     const today = getLocalDateString();
-    const updated = visions.map((v) => {
+    setVisions((prev) => {
+      return prev.map((v) => {
+        if (v.id !== scoringVisionId) return v;
+        const log = v.dailyLog || [];
+        const newLog = log.filter(d => d.date !== today);
+        newLog.push({ date: today, score });
+        return { ...v, dailyLog: newLog };
+      });
+    });
+    
+    // Veriyi kalıcı hafızaya da güncelleyelim.
+    const list = await getVisionNotes();
+    const updated = list.map((v) => {
       if (v.id !== scoringVisionId) return v;
       const log = v.dailyLog || [];
       const newLog = log.filter(d => d.date !== today);
       newLog.push({ date: today, score });
       return { ...v, dailyLog: newLog };
     });
-    setVisions(updated);
     await setVisionNotes(updated);
     
     // Import visionCheckin module dynamically to avoid circular dependencies issues if any, or just call scheduleVisionCheckinNotification if we imported it
@@ -245,33 +256,40 @@ export default function VisionScreen() {
   };
 
   // --- Swipe actions ---
-  const renderRightActions = () => (
-    <View style={styles.deleteAction}>
-      <Feather name="trash-2" size={24} color="#fff" />
-    </View>
-  );
+  const onLeftSwipeOpen = (item) => {
+    // No longer auto-triggering on swipe open
+  };
 
-  const renderLeftActions = () => (
+  const renderRightActions = (progress, dragX, item) => {
+    return (
+      <TouchableOpacity 
+        style={styles.deleteAction} 
+        onPress={() => deleteVision(item.id)}
+      >
+        <Feather name="trash-2" size={24} color="#fff" />
+        <Text style={styles.swipeLabel}>{t('delete')}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderLeftActions = (progress, dragX, item) => (
     <View style={styles.leftActionsRow}>
-      <View style={styles.copyAction}>
+      <TouchableOpacity 
+        style={styles.copyAction} 
+        onPress={() => copyVision(item)}
+      >
         <Feather name="copy" size={20} color="#fff" />
         <Text style={styles.swipeLabel}>{t('copy')}</Text>
-      </View>
-      <View style={styles.editAction}>
+      </TouchableOpacity>
+      <TouchableOpacity 
+        style={styles.editAction} 
+        onPress={() => openEditVision(item)}
+      >
         <Feather name="edit-2" size={20} color="#fff" />
         <Text style={styles.swipeLabel}>{t('edit')}</Text>
-      </View>
+      </TouchableOpacity>
     </View>
   );
-
-  const onLeftSwipeOpen = (item) => {
-    // Show action sheet
-    Alert.alert(t('areYouSure') || 'İşlem Seç', '', [
-      { text: t('copy'), onPress: () => copyVision(item) },
-      { text: t('edit'), onPress: () => openEditVision(item) },
-      { text: t('cancel'), style: 'cancel', onPress: () => swipeableRefs.current.get(item.id)?.close() },
-    ]);
-  };
 
   return (
     <View style={styles.pageContainer}>
@@ -353,12 +371,10 @@ export default function VisionScreen() {
             <Swipeable
               key={item.id}
               ref={(ref) => swipeableRefs.current.set(item.id, ref)}
-              renderRightActions={selectionMode ? undefined : renderRightActions}
-              rightThreshold={width / 2.5}
-              onSwipeableRightOpen={() => deleteVision(item.id)}
-              renderLeftActions={selectionMode ? undefined : renderLeftActions}
-              leftThreshold={width / 3}
-              onSwipeableLeftOpen={() => onLeftSwipeOpen(item)}
+              renderRightActions={selectionMode ? undefined : (progress, dragX) => renderRightActions(progress, dragX, item)}
+              rightThreshold={40}
+              renderLeftActions={selectionMode ? undefined : (progress, dragX) => renderLeftActions(progress, dragX, item)}
+              leftThreshold={40}
               enabled={!selectionMode}
             >
               <TouchableOpacity
@@ -484,7 +500,12 @@ export default function VisionScreen() {
             }}
           />
           <View style={styles.addCard}>
-            <Text style={{ color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 20 }}>{t('createVision')}</Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('createVision')}</Text>
+              <TouchableOpacity onPress={() => setIsModalVisible(false)}>
+                <Feather name="x" size={24} color="#A0A0A0" />
+              </TouchableOpacity>
+            </View>
             <TextInput
               style={styles.input}
               placeholder={t('titlePlaceholder')}
@@ -509,17 +530,8 @@ export default function VisionScreen() {
               keyboardType="number-pad"
             />
             <View style={styles.addActions}>
-              <TouchableOpacity
-                style={[styles.btn, { backgroundColor: '#333' }]}
-                onPress={() => {
-                  setIsModalVisible(false);
-                  Keyboard.dismiss();
-                }}
-              >
-                <Text style={styles.btnTextWhite}>{t('cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btn} onPress={saveVision}>
-                <Text style={styles.btnTextBlack}>{t('save')}</Text>
+              <TouchableOpacity style={styles.saveBtn} onPress={saveVision}>
+                <Text style={styles.saveBtnText}>{t('save')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -541,7 +553,12 @@ export default function VisionScreen() {
             }}
           />
           <View style={styles.addCard}>
-            <Text style={{ color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 20 }}>{t('editVision')}</Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t('editVision')}</Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Feather name="x" size={24} color="#A0A0A0" />
+              </TouchableOpacity>
+            </View>
             <TextInput
               style={styles.input}
               placeholder={t('titleLabel')}
@@ -558,17 +575,8 @@ export default function VisionScreen() {
               onChangeText={setEditContent}
             />
             <View style={styles.addActions}>
-              <TouchableOpacity
-                style={[styles.btn, { backgroundColor: '#333' }]}
-                onPress={() => {
-                  setEditModalVisible(false);
-                  Keyboard.dismiss();
-                }}
-              >
-                <Text style={styles.btnTextWhite}>{t('cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btn} onPress={saveEditVision}>
-                <Text style={styles.btnTextBlack}>{t('save')}</Text>
+              <TouchableOpacity style={styles.saveBtn} onPress={saveEditVision}>
+                <Text style={styles.saveBtnText}>{t('save')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -711,7 +719,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F44336',
     justifyContent: 'center',
     alignItems: 'center',
-    width: 100,
+    width: 90,
     borderRadius: 24,
     marginBottom: 16,
     marginLeft: 15,
@@ -720,15 +728,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 16,
     marginRight: 15,
-    gap: 4,
+    gap: 8,
   },
   copyAction: {
     backgroundColor: '#2196F3',
     justifyContent: 'center',
     alignItems: 'center',
     width: 80,
-    borderTopLeftRadius: 24,
-    borderBottomLeftRadius: 24,
+    borderRadius: 24,
     paddingVertical: 12,
   },
   editAction: {
@@ -736,14 +743,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     width: 80,
-    borderTopRightRadius: 24,
-    borderBottomRightRadius: 24,
+    borderRadius: 24,
     paddingVertical: 12,
   },
   swipeLabel: { color: '#fff', fontSize: 11, fontWeight: '600', marginTop: 4 },
   selectionBar: {
     position: 'absolute',
-    bottom: 95,
+    bottom: 30,
     left: 24,
     right: 24,
     flexDirection: 'row',
@@ -778,8 +784,31 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     paddingBottom: 50,
   },
-  input: { backgroundColor: '#121212', color: '#fff', padding: 16, borderRadius: 12, marginBottom: 16, fontSize: 15 },
-  addActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  input: { backgroundColor: '#121212', color: '#fff', padding: 16, borderRadius: 16, marginBottom: 16, fontSize: 15, borderWidth: 1, borderColor: '#333' },
+  addActions: { marginTop: 8 },
+  saveBtn: {
+    backgroundColor: '#fff',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveBtnText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: '700',
+  },
   btn: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, backgroundColor: '#fff' },
   btnTextWhite: { color: '#fff', fontWeight: '600' },
   btnTextBlack: { color: '#000', fontWeight: '600' },

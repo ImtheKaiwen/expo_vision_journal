@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,6 +9,8 @@ import {
   Alert,
   Share,
   Linking,
+  TextInput,
+  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
@@ -17,8 +19,11 @@ import * as Notifications from 'expo-notifications';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 
-import { getAppSettings, saveAppSettings, exportAllUserData, clearAllData } from '../storage';
+import { getAppSettings, saveAppSettings, exportAllUserData, clearAllData, getStreak } from '../storage';
 import { parseBackupJson, validateBackupPayload, applyBackupImport } from '../storage/importBackup';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
+import ShareStreakCard from '../components/ShareStreakCard';
 import {
   allowsNotifications,
   requestNotificationPermissionsFromUser,
@@ -47,7 +52,13 @@ export default function SettingsScreen() {
   const [minute, setMinute] = useState(0);
   const [notifPerm, setNotifPerm] = useState(null);
   const [motivationalNotifsEnabled, setMotivationalNotifsEnabled] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [originalName, setOriginalName] = useState('');
   const [importMode, setImportMode] = useState('merge');
+  const [activeTab, setActiveTab] = useState('profile');
+  const [streakInfo, setStreakInfo] = useState({ count: 0 });
+  const viewShotRef = useRef(null);
+  const inviteShotRef = useRef(null);
 
   const refreshNotificationPermission = useCallback(async () => {
     try {
@@ -66,6 +77,10 @@ export default function SettingsScreen() {
     setHour(typeof s.notificationHour === 'number' ? s.notificationHour : 9);
     setMinute(typeof s.notificationMinute === 'number' ? s.notificationMinute : 0);
     setMotivationalNotifsEnabled(!!s.motivationalNotifsEnabled);
+    setUserName(s.userName || '');
+    setOriginalName(s.userName || '');
+    const streak = await getStreak();
+    setStreakInfo(streak);
     await refreshNotificationPermission();
   }, [refreshNotificationPermission]);
 
@@ -99,6 +114,69 @@ export default function SettingsScreen() {
     await saveAppSettings({ notificationHour: newHour, notificationMinute: newMinute });
     await syncScheduledNotificationsFromSettings();
     emitAppSettingsChanged();
+  };
+
+  const persistUserName = async (val) => {
+    setUserName(val);
+  };
+
+  const handleSaveName = async () => {
+    if (!userName.trim()) {
+      Alert.alert(t('warning'), t('nameError'));
+      return;
+    }
+    await saveAppSettings({ userName: userName.trim() });
+    setOriginalName(userName.trim());
+    emitAppSettingsChanged();
+    Alert.alert(t('success'), t('saveSuccess') || 'Kaydedildi');
+  };
+
+  const handleShareStreak = async () => {
+    try {
+      const uri = await viewShotRef.current.capture();
+      // On iOS Share.share supports url + message. On Android we stay with Sharing for reliability 
+      // or try to combine if possible. For simplicity and broad support:
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: t('shareStreak'),
+        UTI: 'public.png',
+      });
+      // Also copy link to clipboard as a fallback or show a message
+    } catch (e) {
+      console.log('Share error:', e);
+      Alert.alert(t('warning'), 'Sharing failed.');
+    }
+  };
+
+  const handleInviteFriends = async () => {
+    try {
+      const uri = await inviteShotRef.current.capture();
+      if (Platform.OS === 'ios') {
+        await Share.share({
+          url: uri,
+          message: t('inviteMessage'),
+        });
+      } else {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: t('inviteTitle'),
+          UTI: 'public.png',
+        });
+        // On Android, message often needs to be shared separately or via a different intent
+        // For now we invite via text separately if they click 'Invite'
+      }
+    } catch (e) {
+      console.log('Invite error:', e);
+      Alert.alert(t('warning'), 'Invite failed.');
+    }
+  };
+
+  const validateAndExit = () => {
+    if (!userName.trim()) {
+      Alert.alert(t('warning'), t('nameError'));
+      return false;
+    }
+    return true;
   };
 
   const bumpHour = (delta) => {
@@ -214,18 +292,18 @@ export default function SettingsScreen() {
       await load();
       if (importMode === 'replace') {
         Alert.alert(
-          'Tamam',
+          t('success'),
           `Yedek uygulandı. Günlük: ${r.journalCount ?? 0}, Vizyon: ${r.visionCount ?? 0}${r.replacedStreak ? ', Seri güncellendi.' : ''
           }${r.replacedSettings ? ' Ayarlar dosyadan yüklendi.' : ''}`
         );
       } else {
         Alert.alert(
-          'Tamam',
-          `Birleştirildi. Eklenen günlük: ${r.journalAdded ?? 0}, eklenen vizyon: ${r.visionAdded ?? 0}. Seri ve ayarlar aynı kaldı.`
+          t('success'),
+          `Birleştirme tamamlandı.\n\nGünlük: ${r.journalAdded ?? 0} eklendi, ${r.journalSkipped ?? 0} atlandı.\nVizyon: ${r.visionAdded ?? 0} eklendi, ${r.visionSkipped ?? 0} atlandı.`
         );
       }
     } catch (e) {
-      Alert.alert('Hata', e?.message || 'İçe aktarma başarısız.');
+      Alert.alert(t('warning'), e?.message || 'İçe aktarma başarısız.');
     }
   };
 
@@ -298,177 +376,273 @@ export default function SettingsScreen() {
   return (
     <View style={styles.pageContainer}>
       <Text style={styles.headerTitle}>{t('settings')}</Text>
+
+      <View style={styles.tabRow}>
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'profile' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('profile')}
+        >
+          <Text style={[styles.tabBtnText, activeTab === 'profile' && styles.tabBtnTextActive]}>
+            {t('tabProfile')}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === 'general' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('general')}
+        >
+          <Text style={[styles.tabBtnText, activeTab === 'general' && styles.tabBtnTextActive]}>
+            {t('tabGeneral')}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Feather name="globe" size={20} color="#00BCD4" />
-            <Text style={styles.cardTitle}>{t('appLanguage')}</Text>
-          </View>
-          <View style={styles.importModeRow}>
-            <TouchableOpacity
-              style={[styles.importModeChip, langCode === 'tr' && styles.importModeChipActive]}
-              onPress={() => changeLanguage('tr')}
-            >
-              <Text style={[styles.importModeText, langCode === 'tr' && styles.importModeTextActive]}>
-                Türkçe
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.importModeChip, langCode === 'en' && styles.importModeChipActive]}
-              onPress={() => changeLanguage('en')}
-            >
-              <Text style={[styles.importModeText, langCode === 'en' && styles.importModeTextActive]}>
-                English
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.rowBetween}>
-            <View style={styles.rowLabel}>
-              <Feather name="shield" size={20} color="#A0A0A0" />
-              <Text style={styles.cardTitle}>{t('security')}</Text>
+        {activeTab === 'profile' ? (
+          <>
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Feather name="user" size={20} color="#FFD700" />
+                <Text style={styles.cardTitle}>{t('profileTitle')}</Text>
+              </View>
+              <Text style={styles.hint}>{t('userNameLabel')}</Text>
+              <View style={styles.nameRow}>
+                <TextInput
+                  style={styles.nameInput}
+                  value={userName}
+                  onChangeText={persistUserName}
+                  placeholder={t('userNamePlaceholder')}
+                  placeholderTextColor="#555"
+                  maxLength={20}
+                />
+                <TouchableOpacity 
+                  style={[styles.saveBtn, userName.trim() === originalName.trim() && styles.saveBtnSaved]} 
+                  onPress={handleSaveName}
+                >
+                  <Text style={[styles.saveBtnText, userName.trim() === originalName.trim() && styles.saveBtnTextSaved]}>
+                    {userName.trim() === originalName.trim() ? t('savedBtn') : t('saveBtn')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-          <Text style={styles.hint}>{t('biometricHint')}</Text>
 
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-            <TouchableOpacity
-              style={[styles.importModeChip, authMethod === 'biometric' && styles.importModeChipActive, { flex: 1 }]}
-              onPress={() => persistAuthMethod('biometric')}
-            >
-              <Text style={[styles.importModeText, authMethod === 'biometric' && styles.importModeTextActive, { textAlign: 'center' }]}>{t('useBiometric')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.importModeChip, authMethod === 'pin' && styles.importModeChipActive, { flex: 1 }]}
-              onPress={() => persistAuthMethod('pin')}
-            >
-              <Text style={[styles.importModeText, authMethod === 'pin' && styles.importModeTextActive, { textAlign: 'center' }]}>{t('pinCodeLock')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.importModeChip, authMethod === 'none' && styles.importModeChipActive, { flex: 1 }]}
-              onPress={() => persistAuthMethod('none')}
-            >
-              <Text style={[styles.importModeText, authMethod === 'none' && styles.importModeTextActive, { textAlign: 'center' }]}>{t('none')}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+            <Text style={styles.sectionTitle}>{t('social') || 'Sosyal'}</Text>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Feather name="bell" size={20} color="#FFD700" />
-            <Text style={styles.cardTitle}>{t('notification')}</Text>
-          </View>
-          {!allowsNotifications(notifPerm) && (
-            <>
-              <Text style={styles.hint}>Sistem izin penceresinin görünmesi için önce aşağıdaki düğmeye bas.</Text>
-              <TouchableOpacity style={styles.accentBtn} onPress={onRequestNotificationPermission}>
-                <Feather name="bell" size={18} color="#000" />
-                <Text style={styles.accentBtnText}>{t('reqPerm')}</Text>
-              </TouchableOpacity>
-            </>
-          )}
-          <Text style={styles.hint}>{t('notificationHint')}</Text>
-          <View style={styles.timeRow}>
-            <Text style={styles.timeLabel}>{t('hours')}</Text>
-            <View style={styles.stepper}>
-              <TouchableOpacity style={styles.stepBtn} onPress={() => bumpHour(-1)}>
-                <Feather name="minus" size={20} color="#fff" />
-              </TouchableOpacity>
-              <Text style={styles.timeValue}>{String(hour).padStart(2, '0')}</Text>
-              <TouchableOpacity style={styles.stepBtn} onPress={() => bumpHour(1)}>
-                <Feather name="plus" size={20} color="#fff" />
+            <TouchableOpacity style={styles.socialCard} onPress={handleShareStreak}>
+              <View style={styles.socialIconBox}>
+                <Feather name="zap" size={20} color="#FFD700" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.socialTitle}>{t('shareStreak')}</Text>
+                <Text style={styles.socialSubtitle}>{streakInfo.count || 0} {t('streakDays')}</Text>
+              </View>
+              <Feather name="share-2" size={18} color="#555" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.socialCard, styles.socialCardGold]} onPress={handleInviteFriends}>
+              <View style={[styles.socialIconBox, { backgroundColor: '#FFD700' }]}>
+                <Feather name="users" size={20} color="#000" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.socialTitle, { color: '#FFD700' }]}>{t('inviteTitle')}</Text>
+                <Text style={styles.socialSubtitle}>{t('inviteSubtitle')}</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color="#FFD700" />
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Feather name="globe" size={20} color="#00BCD4" />
+                <Text style={styles.cardTitle}>{t('appLanguage')}</Text>
+              </View>
+              <View style={styles.importModeRow}>
+                <TouchableOpacity
+                  style={[styles.importModeChip, langCode === 'tr' && styles.importModeChipActive]}
+                  onPress={() => changeLanguage('tr')}
+                >
+                  <Text style={[styles.importModeText, langCode === 'tr' && styles.importModeTextActive]}>
+                    Türkçe
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.importModeChip, langCode === 'en' && styles.importModeChipActive]}
+                  onPress={() => changeLanguage('en')}
+                >
+                  <Text style={[styles.importModeText, langCode === 'en' && styles.importModeTextActive]}>
+                    English
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.card}>
+              <View style={styles.rowBetween}>
+                <View style={styles.rowLabel}>
+                  <Feather name="shield" size={20} color="#A0A0A0" />
+                  <Text style={styles.cardTitle}>{t('security')}</Text>
+                </View>
+              </View>
+              <Text style={styles.hint}>{t('biometricHint')}</Text>
+
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <TouchableOpacity
+                  style={[styles.importModeChip, authMethod === 'biometric' && styles.importModeChipActive, { flex: 1 }]}
+                  onPress={() => persistAuthMethod('biometric')}
+                >
+                  <Text style={[styles.importModeText, authMethod === 'biometric' && styles.importModeTextActive, { textAlign: 'center' }]}>{t('useBiometric')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.importModeChip, authMethod === 'pin' && styles.importModeChipActive, { flex: 1 }]}
+                  onPress={() => persistAuthMethod('pin')}
+                >
+                  <Text style={[styles.importModeText, authMethod === 'pin' && styles.importModeTextActive, { textAlign: 'center' }]}>{t('pinCodeLock')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.importModeChip, authMethod === 'none' && styles.importModeChipActive, { flex: 1 }]}
+                  onPress={() => persistAuthMethod('none')}
+                >
+                  <Text style={[styles.importModeText, authMethod === 'none' && styles.importModeTextActive, { textAlign: 'center' }]}>{t('none')}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Feather name="bell" size={20} color="#FFD700" />
+                <Text style={styles.cardTitle}>{t('notification')}</Text>
+              </View>
+              {!allowsNotifications(notifPerm) && (
+                <>
+                  <Text style={styles.hint}>Sistem izin penceresinin görünmesi için önce aşağıdaki düğmeye bas.</Text>
+                  <TouchableOpacity style={styles.accentBtn} onPress={onRequestNotificationPermission}>
+                    <Feather name="bell" size={18} color="#000" />
+                    <Text style={styles.accentBtnText}>{t('reqPerm')}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              <Text style={styles.hint}>{t('notificationHint')}</Text>
+              <View style={styles.timeRow}>
+                <Text style={styles.timeLabel}>{t('hours')}</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => bumpHour(-1)}>
+                    <Feather name="minus" size={20} color="#fff" />
+                  </TouchableOpacity>
+                  <Text style={styles.timeValue}>{String(hour).padStart(2, '0')}</Text>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => bumpHour(1)}>
+                    <Feather name="plus" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
+              <View style={[styles.timeRow, { marginTop: 12, borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 16 }]}>
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <Text style={styles.timeLabel}>{t('motivationalQuotes')}</Text>
+                  <Text style={[styles.hint, { marginTop: 2 }]}>{t('motivationalQuotesHint')}</Text>
+                </View>
+                <Switch
+                  value={motivationalNotifsEnabled}
+                  onValueChange={toggleMotivationalQuotes}
+                  trackColor={{ false: '#333', true: '#4CAF50' }}
+                  thumbColor={motivationalNotifsEnabled ? '#fff' : '#A0A0A0'}
+                />
+              </View>
+
+              <View style={styles.timeRow}>
+                <Text style={styles.timeLabel}>{t('minutes')}</Text>
+                <View style={styles.stepper}>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => bumpMinute(-1)}>
+                    <Feather name="minus" size={20} color="#fff" />
+                  </TouchableOpacity>
+                  <Text style={styles.timeValue}>{String(minute).padStart(2, '0')}</Text>
+                  <TouchableOpacity style={styles.stepBtn} onPress={() => bumpMinute(1)}>
+                    <Feather name="plus" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <TouchableOpacity style={[styles.primaryBtn, { marginTop: 24, marginBottom: 8 }]} onPress={saveReminderTime}>
+                <Feather name="check" size={18} color="#000" />
+                <Text style={styles.primaryBtnText}>{t('saveReminder')}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-          
-          <View style={[styles.timeRow, { marginTop: 12, borderTopWidth: 1, borderTopColor: '#2A2A2A', paddingTop: 16 }]}>
-            <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={styles.timeLabel}>{t('motivationalQuotes')}</Text>
-              <Text style={[styles.hint, { marginTop: 2 }]}>{t('motivationalQuotesHint')}</Text>
-            </View>
-            <Switch
-              value={motivationalNotifsEnabled}
-              onValueChange={toggleMotivationalQuotes}
-              trackColor={{ false: '#333', true: '#4CAF50' }}
-              thumbColor={motivationalNotifsEnabled ? '#fff' : '#A0A0A0'}
-            />
-          </View>
 
-          <View style={styles.timeRow}>
-            <Text style={styles.timeLabel}>{t('minutes')}</Text>
-            <View style={styles.stepper}>
-              <TouchableOpacity style={styles.stepBtn} onPress={() => bumpMinute(-1)}>
-                <Feather name="minus" size={20} color="#fff" />
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Feather name="database" size={20} color="#4CAF50" />
+                <Text style={styles.cardTitle}>{t('backup')}</Text>
+              </View>
+              <Text style={styles.hint}>{t('backupHint')}</Text>
+              <TouchableOpacity style={styles.primaryBtn} onPress={onExport}>
+                <Feather name="upload" size={18} color="#000" />
+                <Text style={styles.primaryBtnText}>{t('export')}</Text>
               </TouchableOpacity>
-              <Text style={styles.timeValue}>{String(minute).padStart(2, '0')}</Text>
-              <TouchableOpacity style={styles.stepBtn} onPress={() => bumpMinute(1)}>
-                <Feather name="plus" size={20} color="#fff" />
+
+              <View style={styles.divider} />
+              <Text style={styles.subheading}>{t('import')}</Text>
+              <Text style={styles.hint}>{t('importHint')}</Text>
+              <View style={styles.importModeRow}>
+                <TouchableOpacity
+                  style={[styles.importModeChip, importMode === 'merge' && styles.importModeChipActive]}
+                  onPress={() => setImportMode('merge')}
+                >
+                  <Text style={[styles.importModeText, importMode === 'merge' && styles.importModeTextActive]}>
+                    {t('mergeMode')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.importModeChip, importMode === 'replace' && styles.importModeChipActive]}
+                  onPress={() => setImportMode('replace')}
+                >
+                  <Text style={[styles.importModeText, importMode === 'replace' && styles.importModeTextActive]}>
+                    {t('replaceMode')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity style={styles.importFileBtn} onPress={onImportPickFile}>
+                <Feather name="download" size={18} color="#000" />
+                <Text style={styles.importFileBtnText}>{t('pickJsonFile')}</Text>
               </TouchableOpacity>
             </View>
-          </View>
-          <TouchableOpacity style={[styles.primaryBtn, { marginTop: 24, marginBottom: 8 }]} onPress={saveReminderTime}>
-            <Feather name="check" size={18} color="#000" />
-            <Text style={styles.primaryBtnText}>{t('saveReminder')}</Text>
-          </TouchableOpacity>
-        </View>
 
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Feather name="database" size={20} color="#4CAF50" />
-            <Text style={styles.cardTitle}>{t('backup')}</Text>
-          </View>
-          <Text style={styles.hint}>{t('backupHint')}</Text>
-          <TouchableOpacity style={styles.primaryBtn} onPress={onExport}>
-            <Feather name="upload" size={18} color="#000" />
-            <Text style={styles.primaryBtnText}>{t('export')}</Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-          <Text style={styles.subheading}>{t('import')}</Text>
-          <Text style={styles.hint}>{t('importHint')}</Text>
-          <View style={styles.importModeRow}>
-            <TouchableOpacity
-              style={[styles.importModeChip, importMode === 'merge' && styles.importModeChipActive]}
-              onPress={() => setImportMode('merge')}
-            >
-              <Text style={[styles.importModeText, importMode === 'merge' && styles.importModeTextActive]}>
-                {t('mergeMode')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.importModeChip, importMode === 'replace' && styles.importModeChipActive]}
-              onPress={() => setImportMode('replace')}
-            >
-              <Text style={[styles.importModeText, importMode === 'replace' && styles.importModeTextActive]}>
-                {t('replaceMode')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity style={styles.importFileBtn} onPress={onImportPickFile}>
-            <Feather name="download" size={18} color="#000" />
-            <Text style={styles.importFileBtnText}>{t('pickJsonFile')}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.card, { borderColor: '#F44336', borderWidth: 1, marginBottom: 100 }]}>
-          <View style={styles.cardHeader}>
-            <Feather name="alert-triangle" size={20} color="#F44336" />
-            <Text style={[styles.cardTitle, { color: '#F44336' }]}>{t('resetApp')}</Text>
-          </View>
-          <Text style={styles.hint}>{t('resetAppHint')}</Text>
-          <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#F44336' }]} onPress={onResetApp}>
-            <Feather name="trash-2" size={18} color="#fff" />
-            <Text style={[styles.primaryBtnText, { color: '#fff' }]}>{t('resetBtn')}</Text>
-          </TouchableOpacity>
-        </View>
+            <View style={[styles.card, { borderColor: '#F44336', borderWidth: 1, marginBottom: 100 }]}>
+              <View style={styles.cardHeader}>
+                <Feather name="alert-triangle" size={20} color="#F44336" />
+                <Text style={[styles.cardTitle, { color: '#F44336' }]}>{t('resetApp')}</Text>
+              </View>
+              <Text style={styles.hint}>{t('resetAppHint')}</Text>
+              <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#F44336' }]} onPress={onResetApp}>
+                <Feather name="trash-2" size={18} color="#fff" />
+                <Text style={[styles.primaryBtnText, { color: '#fff' }]}>{t('resetBtn')}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
       </ScrollView>
+
+      {/* Hidden Views for Sharing */}
+      <View style={{ position: 'absolute', left: -2000, top: -2000 }}>
+        <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1.0 }}>
+          <ShareStreakCard 
+            streak={streakInfo.count || 0} 
+            userName={userName} 
+            t={t} 
+            type="streak"
+          />
+        </ViewShot>
+        <ViewShot ref={inviteShotRef} options={{ format: 'png', quality: 1.0 }}>
+          <ShareStreakCard 
+            streak={0} 
+            userName={userName} 
+            t={t} 
+            type="invite"
+          />
+        </ViewShot>
+      </View>
     </View>
   );
 }
@@ -478,14 +652,111 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 140 },
   headerTitle: { fontSize: 32, fontWeight: '700', color: '#ffffff', marginBottom: 20 },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    padding: 6,
+    marginBottom: 20,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  tabBtnActive: {
+    backgroundColor: '#333',
+  },
+  tabBtnText: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tabBtnTextActive: {
+    color: '#fff',
+  },
   card: { backgroundColor: '#1E1E1E', borderRadius: 20, padding: 20, marginBottom: 16 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10 },
   cardTitle: { fontSize: 16, fontWeight: '600', color: '#ffffff' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   rowLabel: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
   hint: { fontSize: 13, color: '#A0A0A0', marginTop: 10, lineHeight: 18 },
-  statusLine: { fontSize: 14, color: '#D0D0D0', marginTop: 4, fontWeight: '500' },
-  expoHint: { fontSize: 12, color: '#FF9800', marginTop: 10, lineHeight: 17 },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 12,
+  },
+  nameInput: {
+    flex: 1,
+    backgroundColor: '#121212',
+    color: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  saveBtn: {
+    backgroundColor: '#FFD700',
+    paddingHorizontal: 16,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  saveBtnSaved: {
+    backgroundColor: '#2A2A2A',
+  },
+  saveBtnText: {
+    color: '#000',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  saveBtnTextSaved: {
+    color: '#A0A0A0',
+  },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 10,
+    marginBottom: 16,
+    marginLeft: 4,
+  },
+  socialCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+  },
+  socialCardGold: {
+    borderColor: '#FFD700',
+  },
+  socialIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#2A2A2A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  socialTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  socialSubtitle: {
+    color: '#A0A0A0',
+    fontSize: 12,
+    marginTop: 2,
+  },
   timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 },
   timeLabel: { color: '#D0D0D0', fontSize: 15 },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 16 },
@@ -513,17 +784,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   primaryBtnText: { color: '#000000', fontWeight: '600', fontSize: 15 },
-  secondaryBtn: {
-    flexDirection: 'row',
-    backgroundColor: '#2A2A2A',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 12,
-  },
-  secondaryBtnText: { color: '#ffffff', fontWeight: '600', fontSize: 15 },
   importModeRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   importModeChip: {
     flex: 1,
@@ -535,11 +795,6 @@ const styles = StyleSheet.create({
   importModeChipActive: { backgroundColor: '#4CAF50' },
   importModeText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   importModeTextActive: { color: '#000' },
-  pinOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-  pinBox: { backgroundColor: '#1E1E1E', padding: 24, borderRadius: 20, width: '80%', alignItems: 'center' },
-  pinTitle: { color: '#fff', fontSize: 20, fontWeight: '600', marginBottom: 8 },
-  pinSub: { color: '#A0A0A0', fontSize: 13, marginBottom: 20 },
-  pinInput: { backgroundColor: '#121212', color: '#fff', fontSize: 32, padding: 16, borderRadius: 12, width: '100%', textAlign: 'center', letterSpacing: 8, marginBottom: 20 },
   divider: {
     height: 1,
     backgroundColor: '#333',

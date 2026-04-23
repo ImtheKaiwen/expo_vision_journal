@@ -6,22 +6,22 @@ import {
   setJournalEntries,
   setVisionNotes,
   setStreak,
+  DEFAULT_APP_SETTINGS,
 } from './index';
-
-const DEFAULT_APP_SETTINGS = {
-  biometricEnabled: true,
-  notificationHour: 9,
-  notificationMinute: 0,
-};
 
 function normalizeJournalEntries(arr) {
   if (!Array.isArray(arr)) return [];
   const out = [];
   for (const e of arr) {
     if (!e || typeof e !== 'object') continue;
-    if (typeof e.id !== 'string' || typeof e.text !== 'string' || typeof e.date !== 'string') continue;
-    const row = { id: e.id, text: e.text, date: e.date };
-    if (typeof e.createdAt === 'string') row.createdAt = e.createdAt;
+    // Gevşek kontrol: zorunlu alanlar var mı?
+    if (e.id == null || e.text == null || e.date == null) continue;
+    const row = { 
+      id: String(e.id), 
+      text: String(e.text), 
+      date: String(e.date) 
+    };
+    if (e.createdAt != null) row.createdAt = String(e.createdAt);
     out.push(row);
   }
   return out;
@@ -32,8 +32,15 @@ function normalizeVisionNotes(arr) {
   const out = [];
   for (const e of arr) {
     if (!e || typeof e !== 'object') continue;
-    if (typeof e.id !== 'string' || typeof e.title !== 'string' || typeof e.content !== 'string') continue;
-    out.push({ id: e.id, title: e.title, content: e.content });
+    if (e.id == null || e.title == null || e.content == null) continue;
+    const row = { 
+      id: String(e.id), 
+      title: String(e.title), 
+      content: String(e.content),
+      targetDays: Number(e.targetDays) || 0,
+      dailyLog: Array.isArray(e.dailyLog) ? e.dailyLog : [],
+    };
+    out.push(row);
   }
   return out;
 }
@@ -127,42 +134,78 @@ export async function applyBackupImport(data, mode) {
     return { mode: 'replace', journalCount, visionCount, replacedStreak, replacedSettings };
   }
 
+  // MERGE MODE
   let journalAdded = 0;
+  let journalSkipped = 0;
   let visionAdded = 0;
+  let visionSkipped = 0;
 
   if ('journalEntries' in data && Array.isArray(data.journalEntries)) {
     const journalIn = normalizeJournalEntries(data.journalEntries);
     const existingJ = await getJournalEntries();
-    const idJ = new Set(existingJ.map((x) => x.id));
-    const mergedJ = [];
+    
+    // Create a fingerprint set for fast deduplication: "date|text"
+    const fingerprints = new Set(existingJ.map(x => `${x.date}|${x.text.trim()}`));
+    const existingIds = new Set(existingJ.map(x => x.id));
+    
+    const toAdd = [];
     for (const e of journalIn) {
-      let row = { ...e };
-      if (idJ.has(row.id)) {
-        row = { ...row, id: uniqueImportId('j') };
+      const fp = `${e.date}|${e.text.trim()}`;
+      if (fingerprints.has(fp)) {
+        journalSkipped++;
+        continue;
       }
-      idJ.add(row.id);
-      mergedJ.push(row);
+      
+      let row = { ...e };
+      if (existingIds.has(row.id)) {
+        row.id = uniqueImportId('j');
+      }
+      
+      existingIds.add(row.id);
+      fingerprints.add(fp);
+      toAdd.push(row);
     }
-    await setJournalEntries([...mergedJ, ...existingJ]);
-    journalAdded = mergedJ.length;
+    
+    // COMBINE & SORT: Date descending, then createdAt descending
+    const finalJ = [...toAdd, ...existingJ].sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    await setJournalEntries(finalJ);
+    journalAdded = toAdd.length;
   }
 
   if ('visionNotes' in data && Array.isArray(data.visionNotes)) {
     const visionIn = normalizeVisionNotes(data.visionNotes);
     const existingV = await getVisionNotes();
-    const idV = new Set(existingV.map((x) => x.id));
-    const mergedV = [];
+    
+    const fingerprints = new Set(existingV.map(x => `${x.title.trim()}|${x.content.trim()}`));
+    const existingIds = new Set(existingV.map(x => x.id));
+    
+    const toAdd = [];
     for (const e of visionIn) {
-      let row = { ...e };
-      if (idV.has(row.id)) {
-        row = { ...row, id: uniqueImportId('v') };
+      const fp = `${e.title.trim()}|${e.content.trim()}`;
+      if (fingerprints.has(fp)) {
+        visionSkipped++;
+        continue;
       }
-      idV.add(row.id);
-      mergedV.push(row);
+      
+      let row = { ...e };
+      if (existingIds.has(row.id)) {
+        row.id = uniqueImportId('v');
+      }
+      
+      existingIds.add(row.id);
+      fingerprints.add(fp);
+      toAdd.push(row);
     }
-    await setVisionNotes([...mergedV, ...existingV]);
-    visionAdded = mergedV.length;
+    
+    await setVisionNotes([...toAdd, ...existingV]);
+    visionAdded = toAdd.length;
   }
 
-  return { mode: 'merge', journalAdded, visionAdded };
+  return { mode: 'merge', journalAdded, journalSkipped, visionAdded, visionSkipped };
 }

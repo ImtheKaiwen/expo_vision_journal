@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { getVisionNotes, setVisionNotes } from '../storage';
 import { allowsNotifications } from './dailyReminder';
+import { getLocalDateString } from '../utils/journalDates';
 
 const VISION_CHECKIN_ID_PREFIX = 'vision-checkin-';
 
@@ -61,7 +62,7 @@ export async function scheduleVisionCheckinNotification() {
  */
 export async function logVisionDailyScore(visionId, score) {
   const visions = await getVisionNotes();
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const today = getLocalDateString();
   let updatedVision = null;
 
   const updated = visions.map((v) => {
@@ -91,7 +92,7 @@ export async function logVisionDailyScore(visionId, score) {
  */
 export function getTodayScore(vision) {
   if (!vision?.dailyLog) return null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getLocalDateString();
   const entry = vision.dailyLog.find((d) => d.date === today);
   return entry ? entry.score : null;
 }
