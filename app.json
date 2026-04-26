@@ -2,7 +2,7 @@
   "expo": {
     "name": "VisionJournal",
     "slug": "VisionJournal",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -18,12 +18,12 @@
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#121212"
+      "backgroundColor": "#090909"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.imthekaiwen.VisionJournal",
-      "buildNumber": "2",
+      "buildNumber": "1.2.1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSUserNotificationsUsageDescription": "VisionJournal günlük hatırlatıcıları için bildirim gönderir."
@@ -31,10 +31,10 @@
     },
     "android": {
       "package": "com.imthekaiwen.VisionJournal",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#121212"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#090909"
       },
       "edgeToEdgeEnabled": true
     },

@@ -143,7 +143,6 @@ export default function SettingsScreen() {
       });
       // Also copy link to clipboard as a fallback or show a message
     } catch (e) {
-      console.log('Share error:', e);
       Alert.alert(t('warning'), 'Sharing failed.');
     }
   };
@@ -166,7 +165,6 @@ export default function SettingsScreen() {
         // For now we invite via text separately if they click 'Invite'
       }
     } catch (e) {
-      console.log('Invite error:', e);
       Alert.alert(t('warning'), 'Invite failed.');
     }
   };

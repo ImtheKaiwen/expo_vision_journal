@@ -12,6 +12,7 @@ import {
   Platform,
   Dimensions,
   Modal,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Feather } from '@expo/vector-icons';
@@ -191,6 +192,25 @@ export default function JournalScreen() {
     setSelectedIds(new Set());
   };
 
+  const deleteBatch = () => {
+    const items = savedEntries.filter((e) => selectedIds.has(e.id));
+    if (items.length === 0) return Alert.alert(t('warning'), t('noEntrySelected'));
+    Alert.alert(t('delete'), `${items.length} ${t('deleteBatchConfirm')}`, [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('delete'),
+        style: 'destructive',
+        onPress: async () => {
+          const updatedEntries = savedEntries.filter((item) => !selectedIds.has(item.id));
+          setSavedEntries(updatedEntries);
+          await setJournalEntries(updatedEntries);
+          setSelectionMode(false);
+          setSelectedIds(new Set());
+        },
+      },
+    ]);
+  };
+
   const copyDayEntries = async () => {
     if (entriesForSelectedDay.length === 0) return;
     const txt = entriesForSelectedDay.map((e) => `📅 ${e.date}\n${e.text}`).join('\n\n');
@@ -206,7 +226,7 @@ export default function JournalScreen() {
         counts[dt.getDay()]++;
       }
     });
-    
+
     let maxVal = -1;
     let maxIdx = -1;
     counts.forEach((v, i) => {
@@ -224,8 +244,8 @@ export default function JournalScreen() {
   }, [savedEntries, t]);
 
   const renderRightActions = (progress, dragX, item) => (
-    <TouchableOpacity 
-      style={styles.deleteAction} 
+    <TouchableOpacity
+      style={styles.deleteAction}
       onPress={() => deleteEntry(item.id)}
     >
       <Feather name="trash-2" size={24} color="#fff" />
@@ -234,8 +254,8 @@ export default function JournalScreen() {
   );
 
   const renderLeftActions = (progress, dragX, item) => (
-    <TouchableOpacity 
-      style={styles.copyAction} 
+    <TouchableOpacity
+      style={styles.copyAction}
       onPress={() => copyEntry(item.text, item.id)}
     >
       <Feather name="copy" size={24} color="#fff" />
@@ -299,7 +319,6 @@ export default function JournalScreen() {
         UTI: 'public.png',
       });
     } catch (e) {
-      console.log('Share error:', e);
       Alert.alert('Hata', 'Paylaşım hazırlanırken bir sorun oluştu.');
     }
   };
@@ -318,7 +337,6 @@ export default function JournalScreen() {
       // Sharing.shareAsync sonrası bir Share.share metni çıkarabiliriz.
       // Ancak çoğu modern platform görselle birlikte gelen metni kabul eder.
     } catch (e) {
-      console.log('Invite error:', e);
       Alert.alert('Hata', 'Davet hazırlanırken bir sorun oluştu.');
     }
   };
@@ -453,7 +471,7 @@ export default function JournalScreen() {
             <>
               <Heatmap entries={savedEntries} />
               <Text style={styles.calendarHint}>{t('heatmapHint')}</Text>
-              
+
               <Text style={styles.statsTitle}>{t('statsTitle')}</Text>
               <View style={styles.statsRow}>
                 <View style={[styles.statCard, { position: 'relative' }]}>
@@ -467,7 +485,7 @@ export default function JournalScreen() {
                   <Text style={styles.statLabel}>{t('totalEntries')}</Text>
                 </View>
               </View>
-              
+
               <View style={styles.statCardLarge}>
                 <View style={styles.statCardLargeHeader}>
                   <Feather name="bar-chart-2" size={24} color="#2196F3" />
@@ -475,7 +493,7 @@ export default function JournalScreen() {
                 </View>
                 <Text style={styles.statValueLarge}>{stats.topDay}</Text>
                 <Text style={[
-                  styles.statHintLarge, 
+                  styles.statHintLarge,
                   stats.topDay !== '-' && { color: '#4CAF50', fontWeight: '700' }
                 ]}>
                   {stats.topDay === '-' ? t('notEnoughData') : t('mostActiveDayFull')}
@@ -529,8 +547,8 @@ export default function JournalScreen() {
 
         {/* Floating Action Button for writing */}
         {!selectionMode && (
-          <TouchableOpacity 
-            style={styles.fab} 
+          <TouchableOpacity
+            style={styles.fab}
             onPress={() => setWriteModalVisible(true)}
             activeOpacity={0.8}
           >
@@ -561,11 +579,11 @@ export default function JournalScreen() {
         {selectionMode && (
           <View style={styles.selectionBar}>
             <TouchableOpacity style={styles.selectionBarBtn} onPress={selectAllVisible}>
-              <Feather name="check-square" size={18} color="#000" />
+              <Feather name="check-square" size={18} color="#fff" />
               <Text style={styles.selectionBarBtnText}>{t('selectAll')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.selectionBarBtn} onPress={copySelected}>
-              <Feather name="copy" size={18} color="#000" />
+              <Feather name="copy" size={18} color="#fff" />
               <Text style={styles.selectionBarBtnText}>{t('copySelected')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.selectionBarBtn, { backgroundColor: '#F44336' }]} onPress={deleteBatch}>
@@ -578,10 +596,10 @@ export default function JournalScreen() {
         {/* Hidden ViewShot component for sharing */}
         <View style={{ position: 'absolute', left: -2000, top: -2000 }}>
           <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1.0 }}>
-            <ShareStreakCard 
-              streak={streakInfo.count || 0} 
-              userName={appSettings?.userName} 
-              t={t} 
+            <ShareStreakCard
+              streak={streakInfo.count || 0}
+              userName={appSettings?.userName}
+              t={t}
               type="streak"
             />
           </ViewShot>
@@ -589,10 +607,10 @@ export default function JournalScreen() {
 
         <View style={{ position: 'absolute', left: -2000, top: -2000 }}>
           <ViewShot ref={inviteShotRef} options={{ format: 'png', quality: 1.0 }}>
-            <ShareStreakCard 
-              streak={0} 
-              userName={appSettings?.userName} 
-              t={t} 
+            <ShareStreakCard
+              streak={0}
+              userName={appSettings?.userName}
+              t={t}
               type="invite"
             />
           </ViewShot>
@@ -722,7 +740,7 @@ const styles = StyleSheet.create({
   clearButton: { backgroundColor: '#F44336', paddingHorizontal: 16 },
   clearButtonText: { color: '#ffffff', fontWeight: '600' },
   actionButtonText: { color: '#000000', fontWeight: '600' },
-  card: { backgroundColor: '#1E1E1E', borderRadius: 20, padding: 20, marginBottom: 16 },
+  card: { backgroundColor: '#1E1E1E', borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 2, borderColor: 'transparent' },
   cardSelected: { borderWidth: 2, borderColor: '#4CAF50' },
   cardInner: { flexDirection: 'row', alignItems: 'flex-start' },
   checkboxArea: { marginRight: 14, marginTop: 2 },
@@ -776,7 +794,7 @@ const styles = StyleSheet.create({
   swipeLabel: { color: '#fff', fontSize: 12, fontWeight: '600', marginTop: 8 },
   selectionBar: {
     position: 'absolute',
-    bottom: 95,
+    bottom: 110,
     left: 24,
     right: 24,
     flexDirection: 'row',
@@ -788,19 +806,22 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
-    elevation: 10,
+    elevation: 0,
+    borderWidth: Platform.OS === 'android' ? 1 : 0,
+    borderColor: '#333',
   },
   selectionBarBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 4,
     paddingVertical: 12,
+    paddingHorizontal: 4,
     borderRadius: 12,
     backgroundColor: '#2A2A2A',
   },
-  selectionBarBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  selectionBarBtnText: { color: '#fff', fontWeight: '600', fontSize: 12 },
   selectionBarCopyBtn: { backgroundColor: '#fff' },
   selectionBarCopyText: { color: '#000', fontWeight: '700', fontSize: 14 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },

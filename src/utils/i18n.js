@@ -71,7 +71,7 @@ const tr = {
   titlePlaceholder: 'Başlık (Örn: Yeni Hedef)',
   contentPlaceholder: 'Kendine ne söylemek istersin?',
   targetDaysPlaceholder: 'Hedef Gün (İsteğe bağlı, örn: 21)',
-  
+
   // Journal
   searchJournal: 'Tarih veya kelime ile ara...',
   whatHappened: 'Bugün Neler Oldu?',
@@ -87,7 +87,7 @@ const tr = {
   calendarMode: 'Takvim',
   editJournal: 'Günlüğü düzenle',
   shortDays: 'Paz,Pzt,Sal,Çar,Per,Cum,Cmt',
-  
+
   // Analytics
   generalAnalytics: 'Genel Analizler',
   wordAnalytics: 'Kelime Analizleri',

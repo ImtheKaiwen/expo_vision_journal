@@ -108,7 +108,7 @@ export default function AnalyticsScreen() {
       setWeeklyStats(last7.map((d, i) => ({ label: dayLabels[d.dayIndex], count: counts[i] })));
 
     } catch (e) {
-      console.log('Analiz hatası:', e);
+      // Analiz hatası
     }
   };
 

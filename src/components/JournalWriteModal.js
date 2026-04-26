@@ -36,55 +36,57 @@ export default function JournalWriteModal({ visible, onClose, onSave }) {
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); onClose(); }}>
-        <View style={styles.overlay}>
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              style={styles.container}
-            >
-              <View style={styles.sheet}>
-                <View style={styles.handle} />
-                <View style={styles.header}>
-                  <Text style={styles.title}>{t('whatHappened')}</Text>
-                  <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                    <Feather name="x" size={24} color="#A0A0A0" />
-                  </TouchableOpacity>
-                </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.overlay}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : -50}
+      >
+        <TouchableOpacity
+          style={{ flex: 1 }}
+          activeOpacity={1}
+          onPress={() => { Keyboard.dismiss(); onClose(); }}
+        />
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.sheet}>
+            <View style={styles.handle} />
+            <View style={styles.header}>
+              <Text style={styles.title}>{t('whatHappened')}</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <Feather name="x" size={24} color="#A0A0A0" />
+              </TouchableOpacity>
+            </View>
 
-                <TextInput
-                  style={styles.input}
-                  multiline
-                  placeholder={t('journalPlaceholder')}
-                  placeholderTextColor="#555"
-                  autoFocus
-                  value={text}
-                  onChangeText={setText}
-                  textAlignVertical="top"
-                />
+            <TextInput
+              style={styles.input}
+              multiline
+              placeholder={t('journalPlaceholder')}
+              placeholderTextColor="#555"
+              autoFocus
+              value={text}
+              onChangeText={setText}
+              textAlignVertical="top"
+            />
 
-                <View style={styles.footer}>
-                  <TouchableOpacity 
-                    style={[styles.clearBtn, { opacity: text.trim().length > 0 ? 1 : 0 }]} 
-                    onPress={() => setText('')}
-                    disabled={text.trim().length === 0}
-                  >
-                    <Feather name="trash-2" size={20} color="#F44336" />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.saveBtn, text.trim().length === 0 && styles.saveBtnDisabled]} 
-                    onPress={handleSave}
-                    disabled={text.trim().length === 0}
-                  >
-                    <Feather name="check" size={20} color={text.trim().length === 0 ? "#555" : "#000"} />
-                    <Text style={[styles.saveBtnText, text.trim().length === 0 && { color: '#555' }]}>{t('save')}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </KeyboardAvoidingView>
-          </TouchableWithoutFeedback>
-        </View>
-      </TouchableWithoutFeedback>
+            <View style={styles.footer}>
+              <TouchableOpacity
+                style={[styles.clearBtn, { opacity: text.trim().length > 0 ? 1 : 0 }]}
+                onPress={() => setText('')}
+                disabled={text.trim().length === 0}
+              >
+                <Feather name="trash-2" size={20} color="#F44336" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, text.trim().length === 0 && styles.saveBtnDisabled]}
+                onPress={handleSave}
+                disabled={text.trim().length === 0}
+              >
+                <Feather name="check" size={20} color={text.trim().length === 0 ? "#555" : "#000"} />
+                <Text style={[styles.saveBtnText, text.trim().length === 0 && { color: '#555' }]}>{t('save')}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -1,0 +1,83 @@
+name: Campus Meal Build (Android & iOS)
+
+on:
+  push:
+    branches:
+      - main # Kodu main branch'ine pushladığında başlar
+  workflow_dispatch: # Manuel tetikleme butonu
+
+jobs:
+  # --- 1. ANDROID BUILD İŞLEMİ ---
+  build-android:
+    runs-on: ubuntu-latest # Android için Linux sunucusu
+    steps:
+      - name: 📥 Repoyu Çek
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Node.js Kurulumu
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: 📦 Bağımlılıkları Yükle
+        run: npm install
+
+      - name: 🚀 Expo ve EAS'ı Kur
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - name: 🛠️ Android Build Al
+        run: eas build --platform android --profile production --local --non-interactive --output campus-meal.aab
+        env:
+          EXPO_DEBUG: true
+      - name: 📤 Android Çıktısını Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-Journal-Android-App
+          path: vision-journal.aab
+
+  # --- 2. IOS BUILD İŞLEMİ ---
+  build-ios:
+    runs-on: macos-latest # iOS için macOS sunucusu
+    steps:
+      - name: 📥 Repoyu Çek
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Node.js Kurulumu
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: 📦 Bağımlılıkları Yükle
+        run: npm install
+
+      - name: 🚀 Expo ve EAS'ı Kur
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: npm
+
+      - name: 🍏 En Güncel Xcode'u Seç (Apple Gereksinimi)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: 🛠️ iOS Build Al
+        run: eas build --platform ios --profile production --local --non-interactive --output campus-meal.ipa
+        env:
+          EXPO_DEBUG: true
+
+      - name: 🚀 App Store Connect'e Gönder
+        run: eas submit --platform ios --path campus-meal.ipa --non-interactive
+
+      - name: 📤 iOS Çıktısını Yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-Journal-iOS-App
+          path: vision-journal.ipa

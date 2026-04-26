@@ -14,6 +14,7 @@ import {
   Platform,
   Dimensions,
   Animated as RNAnimated,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Feather } from '@expo/vector-icons';
@@ -224,33 +225,31 @@ export default function VisionScreen() {
     setScoreModalVisible(true);
   };
 
-  const logScore = async (score) => {
-    if (!scoringVisionId) return;
+  const logScore = async (score, visionId) => {
+    const targetId = visionId || scoringVisionId;
+    if (!targetId) return;
     const today = getLocalDateString();
     setVisions((prev) => {
       return prev.map((v) => {
-        if (v.id !== scoringVisionId) return v;
+        if (v.id !== targetId) return v;
         const log = v.dailyLog || [];
         const newLog = log.filter(d => d.date !== today);
         newLog.push({ date: today, score });
         return { ...v, dailyLog: newLog };
       });
     });
-    
+
     // Veriyi kalıcı hafızaya da güncelleyelim.
     const list = await getVisionNotes();
     const updated = list.map((v) => {
-      if (v.id !== scoringVisionId) return v;
+      if (v.id !== targetId) return v;
       const log = v.dailyLog || [];
       const newLog = log.filter(d => d.date !== today);
       newLog.push({ date: today, score });
       return { ...v, dailyLog: newLog };
     });
     await setVisionNotes(updated);
-    
-    // Import visionCheckin module dynamically to avoid circular dependencies issues if any, or just call scheduleVisionCheckinNotification if we imported it
-    // For now we just update state. Checkin notification will sync on next load or we can import it at top.
-    
+
     setScoreModalVisible(false);
     setScoringVisionId(null);
   };
@@ -260,29 +259,27 @@ export default function VisionScreen() {
     // No longer auto-triggering on swipe open
   };
 
-  const renderRightActions = (progress, dragX, item) => {
-    return (
-      <TouchableOpacity 
-        style={styles.deleteAction} 
-        onPress={() => deleteVision(item.id)}
-      >
-        <Feather name="trash-2" size={24} color="#fff" />
-        <Text style={styles.swipeLabel}>{t('delete')}</Text>
-      </TouchableOpacity>
-    );
-  };
+  const renderRightActions = (progress, dragX, item) => (
+    <TouchableOpacity
+      style={styles.deleteAction}
+      onPress={() => deleteVision(item.id)}
+    >
+      <Feather name="trash-2" size={24} color="#fff" />
+      <Text style={styles.swipeLabel}>{t('delete')}</Text>
+    </TouchableOpacity>
+  );
 
   const renderLeftActions = (progress, dragX, item) => (
     <View style={styles.leftActionsRow}>
-      <TouchableOpacity 
-        style={styles.copyAction} 
+      <TouchableOpacity
+        style={styles.copyAction}
         onPress={() => copyVision(item)}
       >
         <Feather name="copy" size={20} color="#fff" />
         <Text style={styles.swipeLabel}>{t('copy')}</Text>
       </TouchableOpacity>
-      <TouchableOpacity 
-        style={styles.editAction} 
+      <TouchableOpacity
+        style={styles.editAction}
         onPress={() => openEditVision(item)}
       >
         <Feather name="edit-2" size={20} color="#fff" />
@@ -293,23 +290,23 @@ export default function VisionScreen() {
 
   return (
     <View style={styles.pageContainer}>
-        {/* Title */}
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>{t('tabVision')}</Text>
-          <TouchableOpacity
-            style={[styles.selectBtn, selectionMode && styles.selectBtnActive]}
-            onPress={toggleSelectionMode}
-          >
-            <Feather
-              name={selectionMode ? 'x' : 'check-square'}
-              size={18}
-              color={selectionMode ? '#000' : '#A0A0A0'}
-            />
-            <Text style={[styles.selectBtnText, selectionMode && styles.selectBtnTextActive]}>
-              {selectionMode ? t('cancel') : t('select')}
-            </Text>
-          </TouchableOpacity>
-        </View>
+      {/* Title */}
+      <View style={styles.headerRow}>
+        <Text style={styles.headerTitle}>{t('tabVision')}</Text>
+        <TouchableOpacity
+          style={[styles.selectBtn, selectionMode && styles.selectBtnActive]}
+          onPress={toggleSelectionMode}
+        >
+          <Feather
+            name={selectionMode ? 'x' : 'check-square'}
+            size={18}
+            color={selectionMode ? '#000' : '#A0A0A0'}
+          />
+          <Text style={[styles.selectBtnText, selectionMode && styles.selectBtnTextActive]}>
+            {selectionMode ? t('cancel') : t('select')}
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.streakBadge}>
         <Feather name="zap" size={16} color="#FFD700" />
@@ -320,9 +317,9 @@ export default function VisionScreen() {
       <View style={styles.searchBar}>
         <Feather name="search" size={16} color="#555" />
         <TextInput
-              style={styles.searchBarInput}
-              placeholder={t('searchVision')}
-              placeholderTextColor="#555"
+          style={styles.searchBarInput}
+          placeholder={t('searchVision')}
+          placeholderTextColor="#555"
           value={searchText}
           onChangeText={setSearchText}
         />
@@ -355,6 +352,8 @@ export default function VisionScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -381,7 +380,10 @@ export default function VisionScreen() {
                 activeOpacity={selectionMode ? 0.7 : 1}
                 onPress={selectionMode ? () => toggleSelect(item.id) : undefined}
               >
-                <View style={[styles.card, selectionMode && selectedIds.has(item.id) && styles.cardSelected]}>
+                <View style={[
+                  styles.card,
+                  selectionMode && selectedIds.has(item.id) && styles.cardSelected,
+                ]}>
                   {/* Progress background fill */}
                   {progress !== null && (
                     <View
@@ -412,7 +414,7 @@ export default function VisionScreen() {
                         <Text style={styles.cardTitle}>{item.title}</Text>
                       </View>
                       <Text style={styles.cardContent}>{item.content}</Text>
-                      
+
                       <View style={styles.progressInfoRow}>
                         {progress !== null ? (
                           <View style={styles.progressInfo}>
@@ -435,12 +437,12 @@ export default function VisionScreen() {
                           </TouchableOpacity>
                         )}
                         {!selectionMode && getTodayScoreValue(item) !== null && (
-                          <TouchableOpacity 
+                          <TouchableOpacity
                             style={[
-                              styles.scoreBtn, 
+                              styles.scoreBtn,
                               getTodayScoreValue(item) === 1 ? { backgroundColor: '#4CAF50' } :
-                              getTodayScoreValue(item) === 0.5 ? { backgroundColor: '#FF9800' } :
-                              { backgroundColor: '#F44336' }
+                                getTodayScoreValue(item) === 0.5 ? { backgroundColor: '#FF9800' } :
+                                  { backgroundColor: '#F44336' }
                             ]}
                             onPress={() => openScoreModal(item.id)}
                           >
@@ -487,10 +489,10 @@ export default function VisionScreen() {
 
       {/* Add modal */}
       <Modal visible={isModalVisible} animationType="slide" transparent>
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
-          keyboardVerticalOffset={0} 
+          keyboardVerticalOffset={0}
         >
           <TouchableOpacity
             style={{ flex: 1 }}
@@ -540,8 +542,8 @@ export default function VisionScreen() {
 
       {/* Edit modal */}
       <Modal visible={editModalVisible} animationType="slide" transparent>
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}
           keyboardVerticalOffset={0}
         >
@@ -677,6 +679,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     overflow: 'hidden',
     position: 'relative',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   cardSelected: { borderWidth: 2, borderColor: '#4CAF50' },
   cardInner: { flexDirection: 'row', alignItems: 'flex-start', zIndex: 2, padding: 20 },
@@ -749,7 +753,7 @@ const styles = StyleSheet.create({
   swipeLabel: { color: '#fff', fontSize: 11, fontWeight: '600', marginTop: 4 },
   selectionBar: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 110,
     left: 24,
     right: 24,
     flexDirection: 'row',
@@ -761,7 +765,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.4,
     shadowRadius: 8,
-    elevation: 10,
+    elevation: 0,
+    borderWidth: Platform.OS === 'android' ? 1 : 0,
+    borderColor: '#333',
   },
   selectionBarBtn: {
     flex: 1,
