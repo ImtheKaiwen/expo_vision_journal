@@ -488,11 +488,11 @@ export default function VisionScreen() {
       )}
 
       {/* Add modal */}
-      <Modal visible={isModalVisible} animationType="slide" transparent>
+      <Modal visible={isModalVisible} animationType="slide" transparent statusBarTranslucent>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
-          keyboardVerticalOffset={0}
+          keyboardVerticalOffset={Platform.OS === 'android' ? -50 : 0}
         >
           <TouchableOpacity
             style={{ flex: 1 }}
@@ -502,50 +502,53 @@ export default function VisionScreen() {
             }}
           />
           <View style={styles.addCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('createVision')}</Text>
-              <TouchableOpacity onPress={() => setIsModalVisible(false)}>
-                <Feather name="x" size={24} color="#A0A0A0" />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder={t('titlePlaceholder')}
-              placeholderTextColor="#777"
-              value={newTitle}
-              onChangeText={setNewTitle}
-            />
-            <TextInput
-              style={[styles.input, { minHeight: 120, textAlignVertical: 'top' }]}
-              multiline
-              placeholder={t('contentPlaceholder')}
-              placeholderTextColor="#777"
-              value={newContent}
-              onChangeText={setNewContent}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder={t('targetDaysPlaceholder')}
-              placeholderTextColor="#777"
-              value={newTargetDays}
-              onChangeText={setNewTargetDays}
-              keyboardType="number-pad"
-            />
-            <View style={styles.addActions}>
-              <TouchableOpacity style={styles.saveBtn} onPress={saveVision}>
-                <Text style={styles.saveBtnText}>{t('save')}</Text>
-              </TouchableOpacity>
-            </View>
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{t('createVision')}</Text>
+                <TouchableOpacity onPress={() => setIsModalVisible(false)}>
+                  <Feather name="x" size={24} color="#A0A0A0" />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder={t('titlePlaceholder')}
+                placeholderTextColor="#777"
+                value={newTitle}
+                onChangeText={setNewTitle}
+              />
+              <TextInput
+                style={[styles.input, { height: 160, textAlignVertical: 'top' }]}
+                multiline
+                scrollEnabled={true}
+                placeholder={t('contentPlaceholder')}
+                placeholderTextColor="#777"
+                value={newContent}
+                onChangeText={setNewContent}
+              />
+              <TextInput
+                style={styles.input}
+                placeholder={t('targetDaysPlaceholder')}
+                placeholderTextColor="#777"
+                value={newTargetDays}
+                onChangeText={setNewTargetDays}
+                keyboardType="number-pad"
+              />
+              <View style={styles.addActions}>
+                <TouchableOpacity style={styles.saveBtn} onPress={saveVision}>
+                  <Text style={styles.saveBtnText}>{t('save')}</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
       {/* Edit modal */}
-      <Modal visible={editModalVisible} animationType="slide" transparent>
+      <Modal visible={editModalVisible} animationType="slide" transparent statusBarTranslucent>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
-          keyboardVerticalOffset={0}
+          keyboardVerticalOffset={Platform.OS === 'android' ? -50 : 0}
         >
           <TouchableOpacity
             style={{ flex: 1 }}
@@ -555,32 +558,35 @@ export default function VisionScreen() {
             }}
           />
           <View style={styles.addCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('editVision')}</Text>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
-                <Feather name="x" size={24} color="#A0A0A0" />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              style={styles.input}
-              placeholder={t('titleLabel')}
-              placeholderTextColor="#777"
-              value={editTitle}
-              onChangeText={setEditTitle}
-            />
-            <TextInput
-              style={[styles.input, { minHeight: 120, textAlignVertical: 'top' }]}
-              multiline
-              placeholder={t('contentLabel')}
-              placeholderTextColor="#777"
-              value={editContent}
-              onChangeText={setEditContent}
-            />
-            <View style={styles.addActions}>
-              <TouchableOpacity style={styles.saveBtn} onPress={saveEditVision}>
-                <Text style={styles.saveBtnText}>{t('save')}</Text>
-              </TouchableOpacity>
-            </View>
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{t('editVision')}</Text>
+                <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                  <Feather name="x" size={24} color="#A0A0A0" />
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={styles.input}
+                placeholder={t('titleLabel')}
+                placeholderTextColor="#777"
+                value={editTitle}
+                onChangeText={setEditTitle}
+              />
+              <TextInput
+                style={[styles.input, { height: 160, textAlignVertical: 'top' }]}
+                multiline
+                scrollEnabled={true}
+                placeholder={t('contentLabel')}
+                placeholderTextColor="#777"
+                value={editContent}
+                onChangeText={setEditContent}
+              />
+              <View style={styles.addActions}>
+                <TouchableOpacity style={styles.saveBtn} onPress={saveEditVision}>
+                  <Text style={styles.saveBtnText}>{t('save')}</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </KeyboardAvoidingView>
       </Modal>
