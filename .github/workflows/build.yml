@@ -31,7 +31,7 @@ jobs:
           packager: npm
 
       - name: 🛠️ Android Build Al
-        run: eas build --platform android --profile production --local --non-interactive --output campus-meal.aab
+        run: eas build --platform android --profile production --local --non-interactive --output vision-journal.aab
         env:
           EXPO_DEBUG: true
       - name: 📤 Android Çıktısını Yükle
@@ -69,7 +69,7 @@ jobs:
           xcode-version: latest-stable
 
       - name: 🛠️ iOS Build Al
-        run: eas build --platform ios --profile production --local --non-interactive --output campus-meal.ipa
+        run: eas build --platform ios --profile production --local --non-interactive --output vision-journal.ipa
         env:
           EXPO_DEBUG: true
 
