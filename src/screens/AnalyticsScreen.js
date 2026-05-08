@@ -18,7 +18,7 @@ export default function AnalyticsScreen() {
   const [totalVisions, setTotalVisions] = useState(0);
   const [weeklyStats, setWeeklyStats] = useState([]);
   const [visionCompletionRate, setVisionCompletionRate] = useState(0);
-  const [activeTab, setActiveTab] = useState('genel');
+  const [activeTab, setActiveTab] = useState('general');
   const [difficultVisions, setDifficultVisions] = useState([]);
   const [successfulVisions, setSuccessfulVisions] = useState([]);
   const isFocused = useIsFocused();
@@ -90,7 +90,7 @@ export default function AnalyticsScreen() {
 
       // Weekly habit (last 7 days logic)
       const last7 = [];
-      const dayLabels = t('shortDays').split(',');
+      const dayLabels = t('shortDayNames').split(',');
       const counts = [0,0,0,0,0,0,0]; // Pazartesi(1)-Pazar(0) sırası yerine bugünden geriye 7 gün
       
       const todayDate = new Date();
@@ -108,7 +108,7 @@ export default function AnalyticsScreen() {
       setWeeklyStats(last7.map((d, i) => ({ label: dayLabels[d.dayIndex], count: counts[i] })));
 
     } catch (e) {
-      // Analiz hatası
+      console.error('Analysis error:', e);
     }
   };
 
@@ -130,25 +130,25 @@ export default function AnalyticsScreen() {
 
       <View style={styles.tabRow}>
         <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'genel' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('genel')}
+          style={[styles.tabBtn, activeTab === 'general' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('general')}
         >
-          <Text style={[styles.tabBtnText, activeTab === 'genel' && styles.tabBtnTextActive]}>
+          <Text style={[styles.tabBtnText, activeTab === 'general' && styles.tabBtnTextActive]}>
             {t('generalAnalytics')}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tabBtn, activeTab === 'kelime' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('kelime')}
+          style={[styles.tabBtn, activeTab === 'word' && styles.tabBtnActive]}
+          onPress={() => setActiveTab('word')}
         >
-          <Text style={[styles.tabBtnText, activeTab === 'kelime' && styles.tabBtnTextActive]}>
+          <Text style={[styles.tabBtnText, activeTab === 'word' && styles.tabBtnTextActive]}>
             {t('wordAnalytics')}
           </Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {activeTab === 'genel' && (
+        {activeTab === 'general' && (
           <>
             <View style={styles.summaryRow}>
           <View style={[styles.summaryCard, { flex: 1 }]}>
@@ -204,7 +204,7 @@ export default function AnalyticsScreen() {
           </View>
         )}
 
-        {activeTab === 'genel' && (
+        {activeTab === 'general' && (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <Feather name="alert-circle" size={20} color="#F44336" />
@@ -227,7 +227,7 @@ export default function AnalyticsScreen() {
           </View>
         )}
 
-        {activeTab === 'genel' && successfulVisions.length > 0 && (
+        {activeTab === 'general' && successfulVisions.length > 0 && (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <Feather name="award" size={20} color="#4CAF50" />
@@ -245,7 +245,7 @@ export default function AnalyticsScreen() {
           </>
         )}
 
-        {activeTab === 'kelime' && (
+        {activeTab === 'word' && (
           <>
             <View style={styles.card}>
               <View style={styles.cardHeader}>

@@ -19,7 +19,7 @@ import * as Notifications from 'expo-notifications';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 
-import { getAppSettings, saveAppSettings, exportAllUserData, clearAllData, getStreak } from '../storage';
+import { getAppSettings, saveAppSettings, exportAllUserData, clearAllData, getStreak, saveNutritionSettings } from '../storage';
 import { parseBackupJson, validateBackupPayload, applyBackupImport } from '../storage/importBackup';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
@@ -371,6 +371,20 @@ export default function SettingsScreen() {
     ]);
   };
 
+
+  const onCancelPremiumTest = () => {
+    Alert.alert('Premium İptal (Test)', 'Premium özelliklerini test için kapatmak istiyor musun?', [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: 'Kapat', style: 'destructive', onPress: async () => {
+          await saveAppSettings({ isPremium: false });
+          emitAppSettingsChanged();
+          Alert.alert('Tamam', 'Premium üyeliği (test amaçlı) iptal edildi.');
+        }
+      }
+    ]);
+  };
+
   return (
     <View style={styles.pageContainer}>
       <Text style={styles.headerTitle}>{t('settings')}</Text>
@@ -606,6 +620,7 @@ export default function SettingsScreen() {
                 <Text style={styles.importFileBtnText}>{t('pickJsonFile')}</Text>
               </TouchableOpacity>
             </View>
+
 
             <View style={[styles.card, { borderColor: '#F44336', borderWidth: 1, marginBottom: 100 }]}>
               <View style={styles.cardHeader}>

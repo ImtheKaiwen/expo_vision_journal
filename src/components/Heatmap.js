@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import { entryToYmd, ymdKey } from '../utils/journalDates';
+import { useI18n } from '../utils/i18n';
 
 const { width } = Dimensions.get('window');
 const SQUARE_SIZE = 12;
@@ -8,6 +9,7 @@ const SQUARE_GAP = 3;
 const DAYS_TO_SHOW = 112; // 16 haftalık veri (7 * 16)
 
 export default function Heatmap({ entries }) {
+  const { t } = useI18n();
   const data = useMemo(() => {
     const counts = new Map();
     entries.forEach(e => {
@@ -54,7 +56,7 @@ export default function Heatmap({ entries }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Aktivite Yoğunluğu</Text>
+      <Text style={styles.title}>{t('heatmap')}</Text>
       <ScrollView 
         horizontal 
         showsHorizontalScrollIndicator={false} 
@@ -77,13 +79,13 @@ export default function Heatmap({ entries }) {
         </View>
       </ScrollView>
       <View style={styles.legend}>
-        <Text style={styles.legendText}>Az</Text>
+        <Text style={styles.legendText}>{t('less')}</Text>
         <View style={[styles.miniSquare, { backgroundColor: '#2A2A2A' }]} />
         <View style={[styles.miniSquare, { backgroundColor: '#0E4429' }]} />
         <View style={[styles.miniSquare, { backgroundColor: '#006D32' }]} />
         <View style={[styles.miniSquare, { backgroundColor: '#26A641' }]} />
         <View style={[styles.miniSquare, { backgroundColor: '#39D353' }]} />
-        <Text style={styles.legendText}>Çok</Text>
+        <Text style={styles.legendText}>{t('more')}</Text>
       </View>
     </View>
   );

@@ -12,6 +12,7 @@ import { I18nProvider } from './src/utils/i18n';
 import PinAuth from './src/components/PinAuth';
 import VisionScreen from './src/screens/VisionScreen';
 import JournalScreen from './src/screens/JournalScreen';
+import NutritionScreen from './src/screens/NutritionScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import { getAppSettings } from './src/storage';
@@ -22,6 +23,7 @@ import {
 } from './src/notifications/dailyReminder';
 import { scheduleVisionCheckinNotification } from './src/notifications/visionCheckin';
 import { APP_SETTINGS_CHANGED } from './src/events/appSettings';
+import { setupIAP } from './src/services/iapService';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -49,7 +51,7 @@ export default function App() {
     (async () => {
       try {
         const settings = await getAppSettings();
-        setIsOnboarded(settings.isOnboarded !== false); // default to true to not lock old users immediately if we didn't migrate? Actually it will be false by my new default, so they will see onboarding.
+        setIsOnboarded(settings.isOnboarded !== false);
         
         let method = settings.authMethod;
         if (!method) method = settings.biometricEnabled === false ? 'none' : 'biometric';
@@ -61,6 +63,7 @@ export default function App() {
         }
         await rescheduleDailyNotificationsIfGranted();
         await scheduleVisionCheckinNotification();
+        await setupIAP();
       } catch (e) {
         console.warn('[App] boot:', e?.message ?? e);
       } finally {
@@ -228,6 +231,7 @@ export default function App() {
               let iconName;
               if (route.name === 'Vision') iconName = 'compass';
               else if (route.name === 'Journal') iconName = 'book-open';
+              else if (route.name === 'Diet') iconName = 'pie-chart';
               else if (route.name === 'Analytics') iconName = 'activity';
               else if (route.name === 'Settings') iconName = 'settings';
               return <Feather name={iconName} size={focused ? 28 : 24} color={color} />;
@@ -238,6 +242,7 @@ export default function App() {
         >
           <Tab.Screen name="Vision" component={VisionScreen} />
           <Tab.Screen name="Journal" component={JournalScreen} />
+          <Tab.Screen name="Diet" component={NutritionScreen} />
           <Tab.Screen name="Analytics" component={AnalyticsScreen} />
           <Tab.Screen name="Settings" component={SettingsScreen} />
         </Tab.Navigator>

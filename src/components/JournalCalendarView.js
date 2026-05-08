@@ -22,7 +22,7 @@ export default function JournalCalendarView({
   const { t, langCode } = useI18n();
   const weeks = buildCalendarWeeks(year, monthIndex);
   
-  const allDays = t('shortDays').split(',');
+  const allDays = t('shortDayNames').split(',');
   const labels = [1, 2, 3, 4, 5, 6, 0].map(i => allDays[i]);
 
   const isSelected = (day) => {

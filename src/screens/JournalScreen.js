@@ -13,6 +13,7 @@ import {
   Dimensions,
   Modal,
   TouchableWithoutFeedback,
+  AppState,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Feather } from '@expo/vector-icons';
@@ -24,7 +25,32 @@ import JournalWriteModal from '../components/JournalWriteModal';
 import ShareStreakCard from '../components/ShareStreakCard';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import { getJournalEntries, setJournalEntries, updateStreakOnJournalSave, getStreak, getAppSettings } from '../storage';
+import TodoItem from '../components/TodoItem';
+import TodoWriteModal from '../components/TodoWriteModal';
+import AudioRecorderModal from '../components/AudioRecorderModal';
+import AudioItem from '../components/AudioItem';
+import VideoRecorderModal from '../components/VideoRecorderModal';
+import VideoItem from '../components/VideoItem';
+import PremiumPaywall from '../components/PremiumPaywall';
+import AIPlannerModal from '../components/AIPlannerModal';
+import { 
+  getJournalEntries, 
+  setJournalEntries, 
+  updateStreakOnJournalSave, 
+  getStreak, 
+  getAppSettings,
+  getTodoEntries,
+  setTodoEntries,
+  getAudioEntries,
+  setAudioEntries,
+  getVideoEntries,
+  setVideoEntries
+} from '../storage';
+import {
+  scheduleTodoReminder,
+  cancelTodoReminder,
+} from '../notifications/todoReminders';
+import { requestNotificationPermissionsFromUser } from '../notifications/dailyReminder';
 import {
   addCalendarMonths,
   countEntriesByDay,
@@ -33,6 +59,7 @@ import {
   getLocalDateString,
 } from '../utils/journalDates';
 import { useI18n } from '../utils/i18n';
+import { checkPremiumStatus } from '../services/iapService';
 
 const { width } = Dimensions.get('window');
 
@@ -58,18 +85,103 @@ export default function JournalScreen() {
   const swipeableRefs = useRef(new Map());
   const mainScrollRef = useRef(null);
   const isFocused = useIsFocused();
+  const [activeMainTab, setActiveMainTab] = useState('reflect'); // 'plan' | 'reflect'
+  const [todos, setTodos] = useState([]);
+  const [todoModalVisible, setTodoModalVisible] = useState(false);
+  const [todoFilter, setTodoFilter] = useState('active'); // 'active' | 'completed'
+  const hasCheckedRollover = useRef(false);
+  const [reflectMediaType, setReflectMediaType] = useState('text'); // 'text' | 'audio' | 'video'
+  const [audioEntries, setAudioEntriesState] = useState([]);
+  const [audioModalVisible, setAudioModalVisible] = useState(false);
+  const [videoEntries, setVideoEntriesState] = useState([]);
+  const [videoModalVisible, setVideoModalVisible] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  const [aiPlannerVisible, setAiPlannerVisible] = useState(false);
+  const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
+  const [scheduledNotifications, setScheduledNotifications] = useState([]);
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
-
+  
   useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      if (nextAppState === 'active' && isFocused) {
+        checkPremiumStatus().then(status => {
+          setIsPremium(status);
+        });
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
     if (isFocused) {
       loadEntries();
       loadStreak();
-      getAppSettings().then(setAppSettings);
+      loadTodos();
+      loadAudio();
+      loadVideo();
+      getAppSettings().then(async (settings) => {
+        const isActuallyPremium = await checkPremiumStatus();
+        console.log('--- GÜNCEL PREMIUM DURUMU (RevenueCat):', isActuallyPremium);
+        setAppSettings(settings);
+        setIsPremium(isActuallyPremium);
+        
+        if (settings.isPremium !== isActuallyPremium) {
+          await saveAppSettings({ ...settings, isPremium: isActuallyPremium });
+        }
+      });
+      requestNotificationPermissionsFromUser();
     }
+
+    return () => {
+      subscription.remove();
+    };
   }, [isFocused]);
+
+  const loadAudio = async () => {
+    const list = await getAudioEntries();
+    setAudioEntriesState(list);
+  };
+
+  const loadVideo = async () => {
+    const list = await getVideoEntries();
+    setVideoEntriesState(list);
+  };
+
+  const loadTodos = async () => {
+    const list = await getTodoEntries();
+    setTodos(list);
+    if (!hasCheckedRollover.current) {
+      hasCheckedRollover.current = true;
+      checkRollover(list);
+    }
+  };
+
+  const checkRollover = async (currentTodos) => {
+    const today = getLocalDateString();
+    const missed = currentTodos.filter(t => !t.completed && t.date < today);
+    if (missed.length > 0) {
+      Alert.alert(
+        t('rolloverTitle'),
+        t('rolloverMsg').replace('{{count}}', missed.length),
+        [
+          { text: t('rolloverSkip'), style: 'cancel' },
+          { 
+            text: t('rolloverBtn'), 
+            onPress: async () => {
+              const updated = currentTodos.map(t => 
+                (!t.completed && t.date < today) ? { ...t, date: today } : t
+              );
+              setTodos(updated);
+              await setTodoEntries(updated);
+            }
+          }
+        ]
+      );
+    }
+  };
 
   // Exit selection mode when leaving
   useEffect(() => {
@@ -106,6 +218,137 @@ export default function JournalScreen() {
     Keyboard.dismiss();
   };
 
+  const addTodo = async (taskObjects) => {
+    const today = getLocalDateString();
+    const newItems = await Promise.all(taskObjects.map(async (taskObj, index) => {
+      const todo = {
+        id: (Date.now() + index).toString(),
+        text: taskObj.text,
+        time: taskObj.time, // AI'dan gelen hazır saat
+        completed: false,
+        date: today,
+      };
+      
+      // Bildirim planla
+      const notificationId = await scheduleTodoReminder(todo);
+      if (notificationId) {
+        todo.notificationId = notificationId;
+      }
+      
+      return todo;
+    }));
+    
+    const updated = [...newItems, ...todos];
+    setTodos(updated);
+    await setTodoEntries(updated);
+  };
+
+  const addAudio = async (audioData) => {
+    const updated = [audioData, ...audioEntries];
+    setAudioEntriesState(updated);
+    await setAudioEntries(updated);
+    await updateStreakOnJournalSave(); // Audio journals also count for streak
+    Alert.alert(t('success'), t('audioSaved'));
+  };
+
+  const deleteAudio = (id) => {
+    Alert.alert(t('delete'), t('areYouSure'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('delete'),
+        style: 'destructive',
+        onPress: async () => {
+          const updated = audioEntries.filter(a => a.id !== id);
+          setAudioEntriesState(updated);
+          await setAudioEntries(updated);
+        }
+      }
+    ]);
+  };
+
+  const toggleAudioLock = async (id) => {
+    const updated = audioEntries.map(a => a.id === id ? { ...a, locked: !a.locked } : a);
+    setAudioEntriesState(updated);
+    await setAudioEntries(updated);
+  };
+
+  const addVideo = async (videoData) => {
+    const updated = [videoData, ...videoEntries];
+    setVideoEntriesState(updated);
+    await setVideoEntries(updated);
+    await updateStreakOnJournalSave(); // Video journals also count for streak
+    Alert.alert(t('success'), t('videoSaved'));
+  };
+
+  const loadScheduledNotifications = async () => {
+    const Notifications = require('expo-notifications');
+    const list = await Notifications.getAllScheduledNotificationsAsync();
+    setScheduledNotifications(list);
+  };
+
+  const openNotificationsModal = () => {
+    loadScheduledNotifications();
+    setNotificationsModalVisible(true);
+  };
+
+  const deleteVideo = (id) => {
+    Alert.alert(t('delete'), t('areYouSure'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('delete'),
+        style: 'destructive',
+        onPress: async () => {
+          const updated = videoEntries.filter(v => v.id !== id);
+          setVideoEntriesState(updated);
+          await setVideoEntries(updated);
+        }
+      }
+    ]);
+  };
+
+  const toggleVideoLock = async (id) => {
+    const updated = videoEntries.map(v => v.id === id ? { ...v, locked: !v.locked } : v);
+    setVideoEntriesState(updated);
+    await setVideoEntries(updated);
+  };
+
+  const toggleTodo = async (id) => {
+    setTodos(prev => {
+      const updated = prev.map(t => {
+        if (t.id === id) {
+          const isMarkingComplete = !t.completed;
+          if (isMarkingComplete && t.notificationId) {
+            cancelTodoReminder(t.notificationId);
+          }
+          return { ...t, completed: isMarkingComplete };
+        }
+        return t;
+      });
+      setTodoEntries(updated);
+      return updated;
+    });
+  };
+ 
+  const deleteTodo = async (id) => {
+    console.log('--- Görev Silme Başladı ---', id);
+    const todoToDelete = todos.find(t => t.id === id);
+    
+    if (todoToDelete?.notificationId) {
+      console.log('Bildirim İptal Ediliyor:', todoToDelete.notificationId);
+      await cancelTodoReminder(todoToDelete.notificationId);
+      // Listeyi tazele
+      setTimeout(loadScheduledNotifications, 500);
+    } else {
+      console.log('Bu görevin bir bildirim ID\'si bulunamadı!');
+    }
+    
+    setTodos(prev => {
+      const updated = prev.filter(t => t.id !== id);
+      setTodoEntries(updated);
+      return updated;
+    });
+  };
+
   const openEdit = (item) => {
     setEditingId(item.id);
     setEditText(item.text);
@@ -126,10 +369,10 @@ export default function JournalScreen() {
   };
 
   const deleteEntry = (id) => {
-    Alert.alert('Sil', 'Bu günlüğü silmek istediğine emin misin?', [
-      { text: 'İptal', style: 'cancel', onPress: () => swipeableRefs.current.get(id)?.close() },
+    Alert.alert(t('delete'), t('deleteConfirmJournal') || 'Bu günlüğü silmek istediğine emin misin?', [
+      { text: t('cancel'), style: 'cancel', onPress: () => swipeableRefs.current.get(id)?.close() },
       {
-        text: 'Sil',
+        text: t('delete'),
         style: 'destructive',
         onPress: async () => {
           const updatedEntries = savedEntries.filter((item) => item.id !== id);
@@ -142,7 +385,7 @@ export default function JournalScreen() {
 
   const copyEntry = async (text, id) => {
     const now = new Date();
-    const formattedDateTime = now.toLocaleString('tr-TR', {
+    const formattedDateTime = now.toLocaleString(langCode === 'en' ? 'en-US' : 'tr-TR', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
@@ -176,9 +419,14 @@ export default function JournalScreen() {
   };
 
   const selectAllVisible = () => {
-    const items = viewMode === 'calendar' && selectedDay
-      ? entriesForSelectedDay
-      : filteredEntries;
+    let items = [];
+    if (viewMode === 'calendar' && selectedDay) {
+      items = entriesForSelectedDay;
+    } else {
+      if (reflectMediaType === 'audio') items = audioEntries;
+      else if (reflectMediaType === 'video') items = videoEntries;
+      else items = filteredEntries;
+    }
     setSelectedIds(new Set(items.map((e) => e.id)));
   };
 
@@ -193,7 +441,11 @@ export default function JournalScreen() {
   };
 
   const deleteBatch = () => {
-    const items = savedEntries.filter((e) => selectedIds.has(e.id));
+    let currentList = savedEntries;
+    if (reflectMediaType === 'audio') currentList = audioEntries;
+    else if (reflectMediaType === 'video') currentList = videoEntries;
+
+    const items = currentList.filter((e) => selectedIds.has(e.id));
     if (items.length === 0) return Alert.alert(t('warning'), t('noEntrySelected'));
     Alert.alert(t('delete'), `${items.length} ${t('deleteBatchConfirm')}`, [
       { text: t('cancel'), style: 'cancel' },
@@ -201,9 +453,17 @@ export default function JournalScreen() {
         text: t('delete'),
         style: 'destructive',
         onPress: async () => {
-          const updatedEntries = savedEntries.filter((item) => !selectedIds.has(item.id));
-          setSavedEntries(updatedEntries);
-          await setJournalEntries(updatedEntries);
+          const updated = currentList.filter((item) => !selectedIds.has(item.id));
+          if (reflectMediaType === 'audio') {
+            setAudioEntriesState(updated);
+            await setAudioEntries(updated);
+          } else if (reflectMediaType === 'video') {
+            setVideoEntriesState(updated);
+            await setVideoEntries(updated);
+          } else {
+            setSavedEntries(updated);
+            await setJournalEntries(updated);
+          }
           setSelectionMode(false);
           setSelectedIds(new Set());
         },
@@ -219,8 +479,12 @@ export default function JournalScreen() {
   };
 
   const stats = useMemo(() => {
+    let source = savedEntries;
+    if (reflectMediaType === 'audio') source = audioEntries;
+    if (reflectMediaType === 'video') source = videoEntries;
+
     const counts = [0, 0, 0, 0, 0, 0, 0]; // 0: Sun, 1: Mon...
-    savedEntries.forEach(e => {
+    source.forEach(e => {
       const dt = new Date(e.createdAt || 0);
       if (!Number.isNaN(dt.getTime())) {
         counts[dt.getDay()]++;
@@ -236,12 +500,12 @@ export default function JournalScreen() {
       }
     });
 
-    const dayLabels = t('fullDays').split(',');
+    const dayLabels = t('fullDayNames').split(',');
     return {
-      total: savedEntries.length,
+      total: source.length,
       topDay: maxVal > 0 ? dayLabels[maxIdx] : '-',
     };
-  }, [savedEntries, t]);
+  }, [savedEntries, audioEntries, videoEntries, reflectMediaType, t]);
 
   const renderRightActions = (progress, dragX, item) => (
     <TouchableOpacity
@@ -268,19 +532,33 @@ export default function JournalScreen() {
       item.date.includes(filterText) || item.text.toLowerCase().includes(filterText.toLowerCase())
   );
 
-  const countsByDay = useMemo(
-    () => countEntriesByDay(savedEntries, cursor.year, cursor.monthIndex),
-    [savedEntries, cursor.year, cursor.monthIndex]
-  );
+  const countsByDay = useMemo(() => {
+    let source = savedEntries;
+    if (reflectMediaType === 'audio') source = audioEntries;
+    if (reflectMediaType === 'video') source = videoEntries;
+    
+    return countEntriesByDay(source, cursor.year, cursor.monthIndex);
+  }, [savedEntries, audioEntries, videoEntries, reflectMediaType, cursor.year, cursor.monthIndex]);
 
   const entriesForSelectedDay = useMemo(() => {
     if (!selectedDay) return [];
     const key = ymdKey(selectedDay);
-    return savedEntries.filter((e) => {
+    
+    let source = savedEntries;
+    if (reflectMediaType === 'audio') source = audioEntries;
+    if (reflectMediaType === 'video') source = videoEntries;
+
+    return source.filter((e) => {
       const ymd = entryToYmd(e);
       return ymd && ymdKey(ymd) === key;
     });
-  }, [savedEntries, selectedDay]);
+  }, [savedEntries, audioEntries, videoEntries, reflectMediaType, selectedDay]);
+
+  const todosForSelectedDay = useMemo(() => {
+    if (!selectedDay) return [];
+    const key = ymdKey(selectedDay);
+    return todos.filter((t) => t.date === key);
+  }, [todos, selectedDay]);
 
   const goPrevMonth = useCallback(() => {
     setCursor((c) => addCalendarMonths(c.year, c.monthIndex, -1));
@@ -315,11 +593,11 @@ export default function JournalScreen() {
       // Seri paylaşımı normal, sadece görsel (linksiz)
       await Sharing.shareAsync(uri, {
         mimeType: 'image/png',
-        dialogTitle: 'Serini Paylaş!',
+        dialogTitle: t('shareTitle'),
         UTI: 'public.png',
       });
     } catch (e) {
-      Alert.alert('Hata', 'Paylaşım hazırlanırken bir sorun oluştu.');
+      Alert.alert(t('error'), t('shareError') || 'Paylaşım hazırlanırken bir sorun oluştu.');
     }
   };
 
@@ -332,12 +610,8 @@ export default function JournalScreen() {
         dialogTitle: t('inviteTitle'),
         UTI: 'public.png',
       });
-      // Not: expo-sharing görselle birlikte metni her zaman desteklemeyebilir, 
-      // bu yüzden sistem paylaşımı yerine metni panoya da kopyalayabiliriz veya 
-      // Sharing.shareAsync sonrası bir Share.share metni çıkarabiliriz.
-      // Ancak çoğu modern platform görselle birlikte gelen metni kabul eder.
     } catch (e) {
-      Alert.alert('Hata', 'Davet hazırlanırken bir sorun oluştu.');
+      Alert.alert(t('error'), t('inviteError') || 'Davet hazırlanırken bir sorun oluştu.');
     }
   };
 
@@ -402,60 +676,124 @@ export default function JournalScreen() {
         {/* Header */}
         <View style={styles.headerRow}>
           <Text style={styles.headerTitle}>{t('tabJournal')}</Text>
-          <TouchableOpacity
-            style={[styles.selectBtn, selectionMode && styles.selectBtnActive]}
-            onPress={toggleSelectionMode}
-          >
-            <Feather
-              name={selectionMode ? 'x' : 'check-square'}
-              size={18}
-              color={selectionMode ? '#000' : '#A0A0A0'}
-            />
-            <Text style={[styles.selectBtnText, selectionMode && styles.selectBtnTextActive]}>
-              {selectionMode ? t('cancel') : t('select')}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.modeRow}>
-          <TouchableOpacity
-            style={[styles.modeChip, viewMode === 'list' && styles.modeChipActive]}
-            onPress={setModeList}
-          >
-            <Feather name="list" size={16} color={viewMode === 'list' ? '#000' : '#A0A0A0'} />
-            <Text style={[styles.modeChipText, viewMode === 'list' && styles.modeChipTextActive]}>{t('listMode')}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeChip, viewMode === 'calendar' && styles.modeChipActive]}
-            onPress={setModeCalendar}
-          >
-            <Feather name="calendar" size={16} color={viewMode === 'calendar' ? '#000' : '#A0A0A0'} />
-            <Text style={[styles.modeChipText, viewMode === 'calendar' && styles.modeChipTextActive]}>
-              {t('calendarMode')}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modeChip, viewMode === 'heatmap' && styles.modeChipActive]}
-            onPress={setModeHeatmap}
-          >
-            <Feather name="activity" size={16} color={viewMode === 'heatmap' ? '#000' : '#A0A0A0'} />
-            <Text style={[styles.modeChipText, viewMode === 'heatmap' && styles.modeChipTextActive]}>
-              Heatmap
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {viewMode === 'list' ? (
-          <View style={styles.filterBar}>
-            <Feather name="search" size={16} color="#555" />
-            <TextInput
-              style={styles.filterInput}
-              placeholder={t('searchJournal')}
-              placeholderTextColor="#555"
-              value={filterText}
-              onChangeText={setFilterText}
-            />
+          <View style={styles.headerRight}>
+            {activeMainTab === 'plan' && (
+              <TouchableOpacity onPress={openNotificationsModal} style={styles.headerBellBtn}>
+                <Feather name="bell" size={22} color="#4CAF50" />
+              </TouchableOpacity>
+            )}
+            {activeMainTab === 'reflect' && viewMode !== 'heatmap' && (
+              <TouchableOpacity
+                style={[styles.selectBtn, selectionMode && styles.selectBtnActive]}
+                onPress={toggleSelectionMode}
+              >
+                <Feather
+                  name={selectionMode ? 'x' : 'check-square'}
+                  size={18}
+                  color={selectionMode ? '#000' : '#A0A0A0'}
+                />
+                <Text style={[styles.selectBtnText, selectionMode && styles.selectBtnTextActive]}>
+                  {selectionMode ? t('cancel') : t('select')}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
+        </View>
+
+        {/* Main Tabs */}
+        <View style={styles.mainTabRow}>
+          <TouchableOpacity 
+            style={[styles.mainTabBtn, activeMainTab === 'plan' && styles.mainTabBtnActive]}
+            onPress={() => setActiveMainTab('plan')}
+          >
+            <Text style={[styles.mainTabBtnText, activeMainTab === 'plan' && styles.mainTabBtnTextActive]}>
+              {t('tabPlan')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.mainTabBtn, activeMainTab === 'reflect' && styles.mainTabBtnActive]}
+            onPress={() => setActiveMainTab('reflect')}
+          >
+            <Text style={[styles.mainTabBtnText, activeMainTab === 'reflect' && styles.mainTabBtnTextActive]}>
+              {t('tabReflect')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeMainTab === 'reflect' ? (
+          <>
+            <View style={styles.modeRow}>
+              <TouchableOpacity
+                style={[styles.modeChip, viewMode === 'list' && styles.modeChipActive]}
+                onPress={setModeList}
+              >
+                <Feather name="list" size={16} color={viewMode === 'list' ? '#000' : '#A0A0A0'} />
+                <Text style={[styles.modeChipText, viewMode === 'list' && styles.modeChipTextActive]}>{t('listMode')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeChip, viewMode === 'calendar' && styles.modeChipActive]}
+                onPress={setModeCalendar}
+              >
+                <Feather name="calendar" size={16} color={viewMode === 'calendar' ? '#000' : '#A0A0A0'} />
+                <Text style={[styles.modeChipText, viewMode === 'calendar' && styles.modeChipTextActive]}>
+                  {t('calendarMode')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modeChip, viewMode === 'heatmap' && styles.modeChipActive]}
+                onPress={setModeHeatmap}
+              >
+                <Feather name="activity" size={16} color={viewMode === 'heatmap' ? '#000' : '#A0A0A0'} />
+                <Text style={[styles.modeChipText, viewMode === 'heatmap' && styles.modeChipTextActive]}>
+                  {t('heatmap')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Media Type Tabs (Sub-Tabs) */}
+            <View style={styles.mediaTypeRow}>
+              <TouchableOpacity 
+                style={[styles.mediaTypeBtn, reflectMediaType === 'text' && styles.mediaTypeBtnActive]}
+                onPress={() => setReflectMediaType('text')}
+              >
+                <Feather name="type" size={14} color={reflectMediaType === 'text' ? '#fff' : '#777'} />
+                <Text style={[styles.mediaTypeBtnText, reflectMediaType === 'text' && styles.mediaTypeBtnTextActive]}>
+                  {t('typeText')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.mediaTypeBtn, reflectMediaType === 'audio' && styles.mediaTypeBtnActive]}
+                onPress={() => setReflectMediaType('audio')}
+              >
+                <Feather name="mic" size={14} color={reflectMediaType === 'audio' ? '#fff' : '#777'} />
+                <Text style={[styles.mediaTypeBtnText, reflectMediaType === 'audio' && styles.mediaTypeBtnTextActive]}>
+                  {t('typeAudio')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.mediaTypeBtn, reflectMediaType === 'video' && styles.mediaTypeBtnActive]}
+                onPress={() => setReflectMediaType('video')}
+              >
+                <Feather name="video" size={14} color={reflectMediaType === 'video' ? '#fff' : '#777'} />
+                <Text style={[styles.mediaTypeBtnText, reflectMediaType === 'video' && styles.mediaTypeBtnTextActive]}>
+                  {t('typeVideo')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {viewMode === 'list' && reflectMediaType === 'text' ? (
+              <View style={styles.filterBar}>
+                <Feather name="search" size={16} color="#555" />
+                <TextInput
+                  style={styles.filterInput}
+                  placeholder={t('searchJournal')}
+                  placeholderTextColor="#555"
+                  value={filterText}
+                  onChangeText={setFilterText}
+                />
+              </View>
+            ) : null}
+          </>
         ) : null}
 
         <ScrollView
@@ -467,9 +805,103 @@ export default function JournalScreen() {
         >
           {/* Write Card Removed for FAB/Modal system */}
 
-          {viewMode === 'heatmap' ? (
+          {activeMainTab === 'plan' ? (
+            <View style={styles.planSection}>
+              <TouchableOpacity 
+                style={[styles.aiCard, isPremium && styles.aiCardPremium]} 
+                activeOpacity={0.8}
+                onPress={() => isPremium ? setAiPlannerVisible(true) : setPaywallVisible(true)}
+              >
+                <View style={styles.aiCardContent}>
+                  <Feather name="cpu" size={24} color={isPremium ? "#fff" : "#4CAF50"} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.aiCardTitle, isPremium && { color: '#fff' }]}>
+                      {isPremium ? t('visionAiPlanner') : t('quickPlanner')}
+                    </Text>
+                    <Text style={[styles.aiCardSubtitle, isPremium && { color: 'rgba(255,255,255,0.7)' }]}>
+                      {isPremium ? t('tapToPlan') : t('manualOrAiPlan')}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={isPremium ? "#fff" : "#555"} />
+                </View>
+              </TouchableOpacity>
+
+              <View style={styles.todoStatsRow}>
+                <TouchableOpacity 
+                  style={[styles.todoStat, todoFilter === 'active' && styles.todoStatActive]} 
+                  onPress={() => setTodoFilter('active')}
+                >
+                  <Text style={[styles.todoStatValue, todoFilter === 'active' && styles.todoStatValueActive]}>
+                    {todos.filter(t => t.date === getLocalDateString() && !t.completed).length}
+                  </Text>
+                  <Text style={[styles.todoStatLabel, todoFilter === 'active' && styles.todoStatLabelActive]}>{t('todoRemaining')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.todoStat, todoFilter === 'completed' && styles.todoStatActive]} 
+                  onPress={() => setTodoFilter('completed')}
+                >
+                  <Text style={[styles.todoStatValue, todoFilter === 'completed' && styles.todoStatValueActive]}>
+                    {todos.filter(t => t.date === getLocalDateString() && t.completed).length}
+                  </Text>
+                  <Text style={[styles.todoStatLabel, todoFilter === 'completed' && styles.todoStatLabelActive]}>{t('todoCompleted')}</Text>
+                </TouchableOpacity>
+
+                {/* History Button */}
+                <TouchableOpacity 
+                  style={styles.historyBtn} 
+                  onPress={() => setTodoFilter('history')}
+                >
+                  <Feather name="clock" size={20} color={todoFilter === 'history' ? '#4CAF50' : '#A0A0A0'} />
+                  <Text style={[styles.historyBtnText, todoFilter === 'history' && { color: '#fff' }]}>{t('history')}</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Tasks List */}
+              {todoFilter === 'history' ? (
+                todos.filter(t => t.date < getLocalDateString() && !t.completed).length === 0 ? (
+                  <View style={styles.emptyContainer}>
+                    <Feather name="smile" size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
+                    <Text style={styles.emptyText}>{t('noPastTodo')}</Text>
+                  </View>
+                ) : (
+                  todos
+                    .filter(t => t.date < getLocalDateString() && !t.completed)
+                    .map(item => (
+                      <TodoItem 
+                        key={item.id} 
+                        item={item} 
+                        onToggle={toggleTodo} 
+                        onDelete={deleteTodo} 
+                      />
+                    ))
+                )
+              ) : todos.filter(t => t.date === getLocalDateString() && (todoFilter === 'active' ? !t.completed : t.completed)).length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Feather name={todoFilter === 'active' ? "check-circle" : "info"} size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
+                  <Text style={styles.emptyText}>
+                    {todoFilter === 'active' ? t('noTodo') : t('noCompletedTodo')}
+                  </Text>
+                </View>
+              ) : (
+                todos
+                  .filter(t => t.date === getLocalDateString() && (todoFilter === 'active' ? !t.completed : t.completed))
+                  .map(item => (
+                    <TodoItem 
+                      key={item.id} 
+                      item={item} 
+                      onToggle={toggleTodo} 
+                      onDelete={deleteTodo} 
+                    />
+                  ))
+              )}
+            </View>
+          ) : viewMode === 'heatmap' ? (
             <>
-              <Heatmap entries={savedEntries} />
+              <Heatmap entries={
+                reflectMediaType === 'audio' ? audioEntries :
+                reflectMediaType === 'video' ? videoEntries :
+                savedEntries
+              } />
               <Text style={styles.calendarHint}>{t('heatmapHint')}</Text>
 
               <Text style={styles.statsTitle}>{t('statsTitle')}</Text>
@@ -515,11 +947,24 @@ export default function JournalScreen() {
               </View>
               {!selectedDay ? (
                 <Text style={styles.calendarHint}>{t('tapDayHint')}</Text>
+              ) : activeMainTab === 'plan' ? (
+                todosForSelectedDay.length === 0 ? (
+                  <Text style={styles.calendarHint}>{t('noTodo')}</Text>
+                ) : (
+                  todosForSelectedDay.map((item) => (
+                    <TodoItem 
+                      key={item.id} 
+                      item={item} 
+                      onToggle={toggleTodo} 
+                      onDelete={deleteTodo} 
+                    />
+                  ))
+                )
               ) : entriesForSelectedDay.length === 0 ? (
                 <Text style={styles.calendarHint}>{t('journalNoEntry')}</Text>
               ) : (
                 <>
-                  {!selectionMode && (
+                  {!selectionMode && reflectMediaType === 'text' && (
                     <TouchableOpacity style={styles.copyDayBtn} onPress={copyDayEntries}>
                       <Feather name="copy" size={16} color="#000" />
                       <Text style={styles.copyDayBtnText}>
@@ -527,15 +972,81 @@ export default function JournalScreen() {
                       </Text>
                     </TouchableOpacity>
                   )}
-                  {entriesForSelectedDay.map((item) => renderEntryCard(item))}
+                  {entriesForSelectedDay.map((item) => {
+                    if (reflectMediaType === 'audio') {
+                      return (
+                        <AudioItem 
+                          key={item.id} 
+                          item={item} 
+                          onDelete={deleteAudio} 
+                          onToggleLock={toggleAudioLock}
+                          selectionMode={selectionMode}
+                          isSelected={selectedIds.has(item.id)}
+                          onSelect={() => toggleSelect(item.id)}
+                        />
+                      );
+                    }
+                    if (reflectMediaType === 'video') {
+                      return (
+                        <VideoItem 
+                          key={item.id} 
+                          item={item} 
+                          onDelete={deleteVideo} 
+                          onToggleLock={toggleVideoLock}
+                          selectionMode={selectionMode}
+                          isSelected={selectedIds.has(item.id)}
+                          onSelect={() => toggleSelect(item.id)}
+                        />
+                      );
+                    }
+                    return renderEntryCard(item);
+                  })}
                 </>
               )}
             </>
-          ) : (
-            filteredEntries.length === 0 ? (
+            ) : (
+            reflectMediaType === 'audio' ? (
+              audioEntries.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Feather name="mic" size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
+                  <Text style={styles.emptyText}>{t('noAudio')}</Text>
+                </View>
+              ) : (
+                audioEntries.map((item) => (
+                  <AudioItem 
+                    key={item.id} 
+                    item={item} 
+                    onDelete={deleteAudio} 
+                    onToggleLock={toggleAudioLock}
+                    selectionMode={selectionMode}
+                    isSelected={selectedIds.has(item.id)}
+                    onSelect={() => toggleSelect(item.id)}
+                  />
+                ))
+              )
+            ) : reflectMediaType === 'video' ? (
+              videoEntries.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                  <Feather name="video" size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
+                  <Text style={styles.emptyText}>{t('noVideo')}</Text>
+                </View>
+              ) : (
+                videoEntries.map((item) => (
+                  <VideoItem 
+                    key={item.id} 
+                    item={item} 
+                    onDelete={deleteVideo} 
+                    onToggleLock={toggleVideoLock}
+                    selectionMode={selectionMode}
+                    isSelected={selectedIds.has(item.id)}
+                    onSelect={() => toggleSelect(item.id)}
+                  />
+                ))
+              )
+            ) : filteredEntries.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Feather name="feather" size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
-                <Text style={styles.emptyText}>{t('journalNoEntryList') || 'Henüz kayıt yok. Yazmaya başlamak için tüy ikonuna tıklayın.'}</Text>
+                <Text style={styles.emptyText}>{t('journalNoEntryList')}</Text>
               </View>
             ) : (
               filteredEntries.map((item) => renderEntryCard(item))
@@ -549,14 +1060,33 @@ export default function JournalScreen() {
         {!selectionMode && (
           <TouchableOpacity
             style={styles.fab}
-            onPress={() => setWriteModalVisible(true)}
+            onPress={() => {
+              if (activeMainTab === 'plan') {
+                setAiPlannerVisible(true);
+              }
+              else if (reflectMediaType === 'audio') setAudioModalVisible(true);
+              else if (reflectMediaType === 'video') setVideoModalVisible(true);
+              else setWriteModalVisible(true);
+            }}
             activeOpacity={0.8}
           >
-            <Feather name="feather" size={28} color="#000" />
+            <Feather 
+              name={
+                activeMainTab === 'plan' 
+                  ? "check-square" 
+                  : reflectMediaType === 'audio' 
+                    ? "mic" 
+                    : reflectMediaType === 'video'
+                      ? "video"
+                      : "feather"
+              } 
+              size={28} 
+              color="#000" 
+            />
           </TouchableOpacity>
         )}
 
-        {/* Modal for writing */}
+        {/* Modal for writing journal */}
         <JournalWriteModal
           visible={writeModalVisible}
           onClose={() => setWriteModalVisible(false)}
@@ -575,6 +1105,105 @@ export default function JournalScreen() {
           }}
         />
 
+        {/* Modal for writing todo */}
+        <TodoWriteModal
+          visible={todoModalVisible}
+          onClose={() => setTodoModalVisible(false)}
+          onSave={addTodo}
+        />
+
+        <AudioRecorderModal
+          visible={audioModalVisible}
+          onClose={() => setAudioModalVisible(false)}
+          onSave={addAudio}
+        />
+
+        {/* Modal for video recording */}
+        <VideoRecorderModal
+          visible={videoModalVisible}
+          onClose={() => setVideoModalVisible(false)}
+          onSave={addVideo}
+        />
+
+        <PremiumPaywall
+          visible={paywallVisible}
+          onClose={() => setPaywallVisible(false)}
+          onPurchaseSuccess={async () => {
+            setIsPremium(true);
+            setPaywallVisible(false);
+            setAiPlannerVisible(true);
+            const updatedSettings = { ...appSettings, isPremium: true };
+            // Note: need to ensure setAppSettings/storage update logic is consistent
+          }}
+        />
+
+        <AIPlannerModal
+          visible={aiPlannerVisible}
+          onClose={() => setAiPlannerVisible(false)}
+          onAddTasks={(tasks) => addTodo(tasks)}
+          existingTodos={todos.filter(t => !t.completed)}
+          currentDate={getLocalDateString()}
+          isPremium={isPremium}
+          onShowPaywall={() => {
+            setAiPlannerVisible(false);
+            setPaywallVisible(true);
+          }}
+        />
+
+        <Modal visible={notificationsModalVisible} animationType="slide" transparent>
+          <View style={styles.notifOverlay}>
+            <View style={styles.notifSheet}>
+              <View style={styles.notifHeader}>
+                <Text style={styles.notifTitle}>{t('scheduledNotifications')}</Text>
+                <TouchableOpacity onPress={() => setNotificationsModalVisible(false)}>
+                  <Feather name="x" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.notifList}>
+                {scheduledNotifications.length === 0 ? (
+                  <Text style={styles.notifEmpty}>{t('noPendingNotif')}</Text>
+                ) : (
+                  scheduledNotifications.map((n, idx) => {
+                    let timeStr = t('systemNotif');
+                    const trigger = n.trigger;
+                    
+                    // Expo-notifications bazen veriyi trigger içinde, bazen trigger.date/value içinde verir
+                    const hour = trigger.hour !== undefined ? trigger.hour : trigger.dateComponents?.hour;
+                    const minute = trigger.minute !== undefined ? trigger.minute : trigger.dateComponents?.minute;
+
+                    if (hour !== undefined) {
+                      // Takvim/Rutin bildirim
+                      timeStr = `${t('everyDay')} ${hour.toString().padStart(2, '0')}:${minute?.toString().padStart(2, '0') || '00'}`;
+                    } else if (trigger.type === 'date' || trigger.value || trigger.date) {
+                      // Tek seferlik tarih bildirimi
+                      const dateVal = trigger.value || trigger.date || trigger.timestamp;
+                      if (dateVal) {
+                        timeStr = new Date(dateVal).toLocaleString('tr-TR');
+                      }
+                    } else if (trigger.type === 'timeInterval' || trigger.seconds) {
+                      // Saniye bazlı bildirim
+                      const secs = trigger.seconds || 0;
+                      const targetDate = new Date(Date.now() + secs * 1000);
+                      timeStr = targetDate.toLocaleString('tr-TR');
+                    }
+
+                    return (
+                      <View key={n.identifier || idx} style={styles.notifItem}>
+                        <Feather name={hour !== undefined ? "repeat" : "clock"} size={18} color="#4CAF50" />
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={styles.notifSubject}>{n.content.title}</Text>
+                          <Text style={styles.notifBody}>{n.content.body}</Text>
+                          <Text style={styles.notifTime}>{timeStr}</Text>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
         {/* Selection mode bottom bar */}
         {selectionMode && (
           <View style={styles.selectionBar}>
@@ -582,10 +1211,14 @@ export default function JournalScreen() {
               <Feather name="check-square" size={18} color="#fff" />
               <Text style={styles.selectionBarBtnText}>{t('selectAll')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.selectionBarBtn} onPress={copySelected}>
-              <Feather name="copy" size={18} color="#fff" />
-              <Text style={styles.selectionBarBtnText}>{t('copySelected')}</Text>
-            </TouchableOpacity>
+            
+            {reflectMediaType === 'text' && (
+              <TouchableOpacity style={styles.selectionBarBtn} onPress={copySelected}>
+                <Feather name="copy" size={18} color="#fff" />
+                <Text style={styles.selectionBarBtnText}>{t('copySelected')}</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity style={[styles.selectionBarBtn, { backgroundColor: '#F44336' }]} onPress={deleteBatch}>
               <Feather name="trash-2" size={18} color="#fff" />
               <Text style={[styles.selectionBarBtnText, { color: '#fff' }]}>{t('delete')}</Text>
@@ -676,6 +1309,127 @@ const styles = StyleSheet.create({
   selectBtnActive: { backgroundColor: '#fff' },
   selectBtnText: { color: '#A0A0A0', fontWeight: '600', fontSize: 13 },
   selectBtnTextActive: { color: '#000' },
+  mainTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 20,
+  },
+  mainTabBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  mainTabBtnActive: {
+    backgroundColor: '#333',
+  },
+  mainTabBtnText: {
+    color: '#A0A0A0',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  mainTabBtnTextActive: {
+    color: '#fff',
+  },
+  planSection: {
+    paddingBottom: 20,
+  },
+  aiCard: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.3)',
+  },
+  aiCardPremium: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  aiCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  aiCardTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  aiCardSubtitle: {
+    color: '#777',
+    fontSize: 12,
+  },
+  todoStatsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+  },
+  todoStat: {
+    flex: 1,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  todoStatActive: {
+    backgroundColor: '#333',
+    borderColor: '#4CAF50',
+  },
+  todoStatValue: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  todoStatValueActive: {
+    color: '#4CAF50',
+  },
+  todoStatLabel: {
+    color: '#A0A0A0',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  todoStatLabelActive: {
+    color: '#fff',
+  },
+  historyBtn: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    minWidth: 80,
+  },
+  historyBtnText: {
+    color: '#A0A0A0',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  completedSection: {
+    marginTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+    paddingTop: 20,
+  },
+  completedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  completedTitle: {
+    color: '#777',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   modeRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   modeChip: {
     flexDirection: 'row',
@@ -689,6 +1443,35 @@ const styles = StyleSheet.create({
   modeChipActive: { backgroundColor: '#ffffff' },
   modeChipText: { color: '#A0A0A0', fontWeight: '600', fontSize: 14 },
   modeChipTextActive: { color: '#000000' },
+  mediaTypeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+    justifyContent: 'center',
+  },
+  mediaTypeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: '#1E1E1E',
+  },
+  mediaTypeBtnActive: {
+    backgroundColor: '#333',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  mediaTypeBtnText: {
+    color: '#777',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  mediaTypeBtnTextActive: {
+    color: '#fff',
+  },
   filterBar: {
     flexDirection: 'row',
     backgroundColor: '#1E1E1E',
@@ -976,4 +1759,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  notifOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
+  notifSheet: { backgroundColor: '#121212', borderTopLeftRadius: 32, borderTopRightRadius: 32, height: '70%', padding: 24 },
+  notifHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  notifTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  notifList: { flex: 1 },
+  notifItem: { flexDirection: 'row', backgroundColor: '#1E1E1E', padding: 16, borderRadius: 16, marginBottom: 12, alignItems: 'center' },
+  notifSubject: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  notifBody: { color: '#AAA', fontSize: 14, marginTop: 4 },
+  notifTime: { color: '#4CAF50', fontSize: 12, fontWeight: 'bold', marginTop: 8 },
+  notifEmpty: { color: '#666', textAlign: 'center', marginTop: 100 },
+  headerRight: { flexDirection: 'row', alignItems: 'center' },
+  headerBellBtn: { padding: 8, marginRight: 4 },
+  bellBtn: { padding: 8, backgroundColor: 'rgba(76, 175, 80, 0.1)', borderRadius: 12, marginLeft: 10, alignSelf: 'center' },
 });
