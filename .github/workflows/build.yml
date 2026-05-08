@@ -1,4 +1,4 @@
-name: Campus Meal Build (Android & iOS)
+name: Vision Journal Build (Android & iOS)
 
 on:
   push:
@@ -80,7 +80,7 @@ jobs:
           EXPO_PUBLIC_CLAUDE_API_KEY: ${{ secrets.EXPO_PUBLIC_CLAUDE_API_KEY }}
 
       - name: 🚀 App Store Connect'e Gönder
-        run: eas submit --platform ios --path campus-meal.ipa --non-interactive
+        run: eas submit --platform ios --path vision-journal.ipa --non-interactive
 
       - name: 📤 iOS Çıktısını Yükle
         uses: actions/upload-artifact@v4
