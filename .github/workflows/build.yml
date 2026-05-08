@@ -34,6 +34,9 @@ jobs:
         run: eas build --platform android --profile production --local --non-interactive --output vision-journal.aab
         env:
           EXPO_DEBUG: true
+          EXPO_PUBLIC_OPENAI_API_KEY: ${{ secrets.EXPO_PUBLIC_OPENAI_API_KEY }}
+          EXPO_PUBLIC_GEMINI_API_KEY: ${{ secrets.EXPO_PUBLIC_GEMINI_API_KEY }}
+          EXPO_PUBLIC_CLAUDE_API_KEY: ${{ secrets.EXPO_PUBLIC_CLAUDE_API_KEY }}
       - name: 📤 Android Çıktısını Yükle
         uses: actions/upload-artifact@v4
         with:
@@ -72,6 +75,9 @@ jobs:
         run: eas build --platform ios --profile production --local --non-interactive --output vision-journal.ipa
         env:
           EXPO_DEBUG: true
+          EXPO_PUBLIC_OPENAI_API_KEY: ${{ secrets.EXPO_PUBLIC_OPENAI_API_KEY }}
+          EXPO_PUBLIC_GEMINI_API_KEY: ${{ secrets.EXPO_PUBLIC_GEMINI_API_KEY }}
+          EXPO_PUBLIC_CLAUDE_API_KEY: ${{ secrets.EXPO_PUBLIC_CLAUDE_API_KEY }}
 
       - name: 🚀 App Store Connect'e Gönder
         run: eas submit --platform ios --path campus-meal.ipa --non-interactive
