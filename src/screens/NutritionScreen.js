@@ -31,6 +31,11 @@ import { useI18n } from '../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
+const formatNum = (num) => {
+  if (num === undefined || num === null) return 0;
+  return Number(num.toFixed(1));
+};
+
 export default function NutritionScreen() {
   const { t, langCode } = useI18n();
   const isFocused = useIsFocused();
@@ -272,7 +277,7 @@ export default function NutritionScreen() {
                     {remainingCal >= 0 ? t('calRemaining') : t('targetExceeded')}
                   </Text>
                   <Text style={[styles.calValue, remainingCal < 0 && { color: '#FF4B4B' }]}>
-                    {remainingCal >= 0 ? remainingCal : `+${Math.abs(remainingCal)}`}
+                    {remainingCal >= 0 ? formatNum(remainingCal) : `+${formatNum(Math.abs(remainingCal))}`}
                   </Text>
                   <Text style={styles.calTotal}>
                     {t('target')}: {settings.targets.calories}
@@ -379,7 +384,7 @@ export default function NutritionScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.mealName}>{meal.name}</Text>
                       <Text style={styles.mealMacros}>
-                        {meal.calories} kcal • {t('pShort')}: {meal.protein}g • {t('fShort')}: {meal.fat}g • {t('cShort')}: {meal.carbs}g
+                        {formatNum(meal.calories)} kcal • {t('pShort')}: {formatNum(meal.protein)}g • {t('fShort')}: {formatNum(meal.fat)}g • {t('cShort')}: {formatNum(meal.carbs)}g
                       </Text>
                     </View>
                     <Feather name="chevron-left" size={16} color="#444" />
@@ -530,7 +535,7 @@ export default function NutritionScreen() {
                         day.cal > settings.targets.calories && { color: '#FF4B4B' },
                       ]}
                     >
-                      {day.cal} kcal
+                      {formatNum(day.cal)} kcal
                     </Text>
                     <Feather name="chevron-right" size={16} color="#666" />
                   </View>
@@ -602,23 +607,23 @@ export default function NutritionScreen() {
                         selectedDay?.cal > settings.targets.calories && { color: '#FF4B4B' },
                       ]}
                     >
-                      {selectedDay?.cal}{' '}
+                      {formatNum(selectedDay?.cal)}{' '}
                       <Text style={{ fontSize: 14, color: '#666' }}>
-                        / {settings.targets.calories} kcal
+                        / {formatNum(settings.targets.calories)} kcal
                       </Text>
                     </Text>
                     {selectedDay?.cal > settings.targets.calories ? (
                       <Text style={{ color: '#FF4B4B', fontSize: 12, fontWeight: 'bold', marginTop: 4 }}>
                         {t('targetExceededBy').replace(
                           '{{amount}}',
-                          selectedDay.cal - settings.targets.calories
+                          formatNum(selectedDay.cal - settings.targets.calories)
                         )}
                       </Text>
                     ) : (
                       <Text style={{ color: '#4CAF50', fontSize: 12, fontWeight: 'bold', marginTop: 4 }}>
                         {t('belowTargetBy').replace(
                           '{{amount}}',
-                          settings.targets.calories - selectedDay?.cal
+                          formatNum(settings.targets.calories - selectedDay?.cal)
                         )}
                       </Text>
                     )}
@@ -710,7 +715,7 @@ export default function NutritionScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.mealNameDetail}>{m.name}</Text>
                     <Text style={styles.mealMacrosDetail}>
-                      {m.calories} kcal • {t('pShort')}: {m.protein}g • {t('fShort')}: {m.fat}g • {t('cShort')}: {m.carbs}g
+                      {formatNum(m.calories)} kcal • {t('pShort')}: {formatNum(m.protein)}g • {t('fShort')}: {formatNum(m.fat)}g • {t('cShort')}: {formatNum(m.carbs)}g
                     </Text>
                   </View>
                 </View>
@@ -730,7 +735,7 @@ function MacroBar({ label, current, target, color, isPercent }) {
       <View style={styles.macroTextRow}>
         <Text style={styles.macroLabel}>{label}</Text>
         <Text style={styles.macroValue}>
-          {isPercent ? `%${current}` : `${current}/${target}g`}
+          {isPercent ? `%${formatNum(current)}` : `${formatNum(current)}/${formatNum(target)}g`}
         </Text>
       </View>
       <View style={styles.macroBg}>

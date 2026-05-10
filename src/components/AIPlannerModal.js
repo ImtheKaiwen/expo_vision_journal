@@ -36,8 +36,67 @@ export default function AIPlannerModal({
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [suggestedTasks, setSuggestedTasks] = useState([]);
+  const [stagedTasks, setStagedTasks] = useState([]);
   const [recording, setRecording] = useState(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
+
+  const getCategoryColor = (cat) => {
+    switch(cat) {
+      case 'morning': return '#FFB300';
+      case 'afternoon': return '#03A9F4';
+      case 'evening': return '#9C27B0';
+      default: return '#777';
+    }
+  };
+
+  const detectCategory = (text) => {
+    const lower = text.toLowerCase().trim();
+    if (lower.startsWith('sabah') || lower.startsWith('morning')) return 'morning';
+    if (lower.startsWith('öğle') || lower.startsWith('öğlen') || lower.startsWith('afternoon')) return 'afternoon';
+    if (lower.startsWith('akşam') || lower.startsWith('evening')) return 'evening';
+    return 'general';
+  };
+
+  const stripCategoryKeyword = (text, category) => {
+    if (category === 'general') return text;
+    const lower = text.toLowerCase().trim();
+    let keyword = '';
+    if (category === 'morning') keyword = lower.startsWith('sabah') ? 'sabah' : 'morning';
+    else if (category === 'afternoon') {
+      if (lower.startsWith('öğle')) keyword = 'öğle';
+      else if (lower.startsWith('öğlen')) keyword = 'öğlen';
+      else keyword = 'afternoon';
+    }
+    else if (category === 'evening') keyword = lower.startsWith('akşam') ? 'akşam' : 'evening';
+
+    if (keyword && lower.startsWith(keyword)) {
+      const rest = text.substring(keyword.length).trim();
+      return rest || text; // If nothing left, keep original
+    }
+    return text;
+  };
+
+  const handleInputChange = (text) => {
+    // If user enters a newline, add current text to staged tasks
+    if (text.endsWith('\n')) {
+      const taskText = text.trim();
+      if (taskText) {
+        const category = detectCategory(taskText);
+        const cleanText = stripCategoryKeyword(taskText, category);
+
+        setStagedTasks(prev => [...prev, { 
+          id: Date.now().toString(), 
+          text: cleanText, 
+          time: null,
+          category,
+          selected: true 
+        }]);
+        setInputText('');
+      }
+    } else {
+      setInputText(text);
+    }
+  };
 
   const handleGenerate = async () => {
     if (!isPremium) {
@@ -55,6 +114,7 @@ export default function AIPlannerModal({
         id: Date.now().toString() + index,
         text: task.text,
         time: task.time,
+        category: task.category || 'general',
         isTimeAmbiguous: task.isTimeAmbiguous,
         selected: true
       }));
@@ -69,10 +129,24 @@ export default function AIPlannerModal({
   const handleManualAdd = () => {
     if (!inputText.trim()) return;
     const lines = inputText.split('\n').filter(l => l.trim() !== '');
-    const tasks = lines.map(l => ({ text: l, time: null }));
-    onAddTasks(tasks);
+    const newTasks = lines.map((l, index) => {
+      const category = detectCategory(l);
+      const cleanText = stripCategoryKeyword(l, category);
+
+      return { 
+        id: (Date.now() + index).toString(),
+        text: cleanText, 
+        time: null,
+        category,
+        selected: true
+      };
+    });
+    setStagedTasks(prev => [...prev, ...newTasks]);
     setInputText('');
-    onClose();
+  };
+
+  const removeStagedTask = (id) => {
+    setStagedTasks(prev => prev.filter(t => t.id !== id));
   };
 
   const startRecording = async () => {
@@ -144,13 +218,24 @@ export default function AIPlannerModal({
   };
 
   const handleConfirm = () => {
-    const finalTasks = suggestedTasks.filter(t => t.selected).map(t => ({
+    const suggested = suggestedTasks.filter(t => t.selected).map(t => ({
       text: t.text,
-      time: t.time
+      time: t.time,
+      category: t.category || 'general'
     }));
+    const staged = stagedTasks.filter(t => t.selected).map(t => ({
+      text: t.text,
+      time: t.time,
+      category: t.category || 'general'
+    }));
+    
+    const finalTasks = [...staged, ...suggested];
+    if (finalTasks.length === 0) return;
+
     onAddTasks(finalTasks);
     setInputText('');
     setSuggestedTasks([]);
+    setStagedTasks([]);
     onClose();
   };
 
@@ -166,6 +251,7 @@ export default function AIPlannerModal({
 
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? -60 : 0}
             style={{ width: '100%' }}
           >
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -195,8 +281,9 @@ export default function AIPlannerModal({
                       placeholder={t('aiPlannerPlaceholder')}
                       placeholderTextColor="#555"
                       value={inputText}
-                      onChangeText={setInputText}
+                      onChangeText={handleInputChange}
                       scrollEnabled={true}
+                      blurOnSubmit={false}
                     />
                     {inputText.length > 0 && !isLoading && (
                       <TouchableOpacity 
@@ -210,27 +297,29 @@ export default function AIPlannerModal({
                   <Text style={styles.manualHint}>{t('aiPlannerHint')}</Text>
 
                   <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.generateBtn,
-                        (!isPremium || !inputText.trim() || isLoading) && styles.generateBtnDisabled,
-                        (isPremium && isLoading) && { backgroundColor: '#4CAF50' }
-                      ]}
-                      onPress={handleGenerate}
-                      disabled={isLoading}
-                    >
-                      {isLoading ? (
-                        <View style={styles.loadingWrapper}>
-                          <ActivityIndicator color="#fff" size="small" />
-                          <Text style={[styles.generateBtnText, { color: '#fff', marginLeft: 8 }]}>{t('planning')}</Text>
-                        </View>
-                      ) : (
-                        <>
-                          <Text style={styles.generateBtnText}>{t('planWithAI')}</Text>
-                          <Feather name={isPremium ? "zap" : "lock"} size={16} color="#000" />
-                        </>
-                      )}
-                    </TouchableOpacity>
+                    {isPremium && (
+                      <TouchableOpacity
+                        style={[
+                          styles.generateBtn,
+                          (!inputText.trim() || isLoading) && styles.generateBtnDisabled,
+                          (isLoading) && { backgroundColor: '#4CAF50' }
+                        ]}
+                        onPress={handleGenerate}
+                        disabled={isLoading}
+                      >
+                        {isLoading ? (
+                          <View style={styles.loadingWrapper}>
+                            <ActivityIndicator color="#fff" size="small" />
+                            <Text style={[styles.generateBtnText, { color: '#fff', marginLeft: 8 }]}>{t('planning')}</Text>
+                          </View>
+                        ) : (
+                          <>
+                            <Text style={styles.generateBtnText}>{t('planWithAI')}</Text>
+                            <Feather name="zap" size={16} color="#000" />
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    )}
  
                     <TouchableOpacity 
                       style={[styles.manualAddBtn, !inputText.trim() && styles.manualAddBtnDisabled]}
@@ -241,24 +330,24 @@ export default function AIPlannerModal({
                       <Text style={styles.manualAddBtnText}>{t('add')}</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
-                      style={[
-                        styles.voiceBtn, 
-                        (!isPremium || recording) && styles.voiceBtnActive,
-                        !isPremium && styles.voiceBtnDisabled
-                      ]}
-                      onPress={handleVoicePress}
-                      disabled={isTranscribing}
-                    >
-                      {isTranscribing ? (
-                        <ActivityIndicator color="#4CAF50" size="small" />
-                      ) : (
-                        <View style={styles.voiceBtnContent}>
-                          <Feather name="mic" size={22} color={recording ? "#fff" : "#4CAF50"} />
-                          {!isPremium && <Feather name="lock" size={10} color="#555" style={styles.lockIcon} />}
-                        </View>
-                      )}
-                    </TouchableOpacity>
+                    {isPremium && (
+                      <TouchableOpacity 
+                        style={[
+                          styles.voiceBtn, 
+                          (recording) && styles.voiceBtnActive,
+                        ]}
+                        onPress={handleVoicePress}
+                        disabled={isTranscribing}
+                      >
+                        {isTranscribing ? (
+                          <ActivityIndicator color="#4CAF50" size="small" />
+                        ) : (
+                          <View style={styles.voiceBtnContent}>
+                            <Feather name="mic" size={22} color={recording ? "#fff" : "#4CAF50"} />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   {recording && (
@@ -266,6 +355,32 @@ export default function AIPlannerModal({
                   )}
                   {isTranscribing && (
                     <Text style={styles.voiceStatus}>{t('transcribing')}</Text>
+                  )}
+
+                  {stagedTasks.length > 0 && (
+                    <View style={styles.resultArea}>
+                      <Text style={styles.resultTitle}>{t('todoTitle')} ({stagedTasks.length})</Text>
+                      <View style={styles.taskList}>
+                        {stagedTasks.map(task => (
+                          <View key={task.id} style={styles.taskItem}>
+                            <View style={[styles.checkbox, styles.checkboxChecked]}>
+                              <Feather name="check" size={14} color="#fff" />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.taskText}>{task.text}</Text>
+                              {task.category && (
+                                <Text style={[styles.categoryBadge, { color: getCategoryColor(task.category) }]}>
+                                  {t(task.category)}
+                                </Text>
+                              )}
+                            </View>
+                            <TouchableOpacity onPress={() => removeStagedTask(task.id)} style={styles.removeBtn}>
+                              <Feather name="trash-2" size={16} color="#FF4B4B" />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
                   )}
 
                   {suggestedTasks.length > 0 && (
@@ -285,6 +400,11 @@ export default function AIPlannerModal({
                               <Text style={[styles.taskText, !task.selected && styles.taskTextDisabled]}>
                                 {task.text}
                               </Text>
+                              {task.category && (
+                                <Text style={[styles.categoryBadge, { color: getCategoryColor(task.category) }]}>
+                                  {t(task.category)}
+                                </Text>
+                              )}
                               {task.time && (
                                 <View style={styles.timeBadgeRow}>
                                   <View style={styles.timeBadge}>
@@ -309,13 +429,17 @@ export default function AIPlannerModal({
                       </View>
                     </View>
                   )}
+                  {(suggestedTasks.length > 0 || stagedTasks.length > 0) && (
+                    <TouchableOpacity 
+                      style={styles.confirmBtn} 
+                      onPress={handleConfirm}
+                    >
+                      <Text style={styles.confirmBtnText}>
+                        {t('addToMyList')} ({suggestedTasks.filter(t => t.selected).length + stagedTasks.length})
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </ScrollView>
-
-                {suggestedTasks.length > 0 && (
-                  <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-                    <Text style={styles.confirmBtnText}>{t('addToMyList')} ({suggestedTasks.filter(t => t.selected).length})</Text>
-                  </TouchableOpacity>
-                )}
               </View>
             </TouchableWithoutFeedback>
           </KeyboardAvoidingView>
@@ -340,7 +464,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 24,
-    paddingBottom: 260,
+    paddingBottom: 40,
   },
   header: {
     flexDirection: 'row',
@@ -462,6 +586,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  removeBtn: {
+    padding: 8,
+    backgroundColor: 'rgba(255, 75, 75, 0.1)',
+    borderRadius: 10,
+  },
   voiceBtnContent: {
     width: '100%',
     height: '100%',
@@ -528,6 +657,13 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: '500',
   },
+  categoryBadge: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    marginTop: 2,
+    letterSpacing: 0.5,
+  },
   taskTextDisabled: {
     color: '#555',
     textDecorationLine: 'line-through',
@@ -570,10 +706,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   confirmBtn: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 24,
-    left: 24,
-    right: 24,
+    marginTop: 24,
+    marginBottom: 20,
     height: 60,
     backgroundColor: '#4CAF50',
     borderRadius: 20,

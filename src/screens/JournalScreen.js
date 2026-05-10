@@ -64,7 +64,7 @@ import { checkPremiumStatus } from '../services/iapService';
 const { width } = Dimensions.get('window');
 
 export default function JournalScreen() {
-  const { t } = useI18n();
+  const { t, langCode } = useI18n();
   const [viewMode, setViewMode] = useState('list');
   const [entry, setEntry] = useState('');
   const [savedEntries, setSavedEntries] = useState([]);
@@ -227,6 +227,7 @@ export default function JournalScreen() {
         time: taskObj.time, // AI'dan gelen hazır saat
         completed: false,
         date: today,
+        category: taskObj.category || 'general',
       };
       
       // Bildirim planla
@@ -312,14 +313,54 @@ export default function JournalScreen() {
     await setVideoEntries(updated);
   };
 
+  const toggleCategory = async (categoryKey, markComplete) => {
+    const today = getLocalDateString();
+    let newNotificationIds = {};
+
+    setTodos(prev => {
+      const updated = prev.map(t => {
+        if (t.date === today && t.category === categoryKey) {
+          if (markComplete && !t.completed) {
+            if (t.notificationId) cancelTodoReminder(t.notificationId);
+            return { ...t, completed: true, notificationId: null };
+          } else if (!markComplete && t.completed) {
+            // Undo logic for batch will be handled after state update for simplicity or skipped if too complex
+            return { ...t, completed: false };
+          }
+        }
+        return t;
+      });
+      setTodoEntries(updated);
+      return updated;
+    });
+
+    // Handle re-scheduling for undone tasks in batch
+    if (!markComplete) {
+      const tasksToReschedule = todos.filter(t => t.date === today && t.category === categoryKey && t.completed && t.time);
+      for (const task of tasksToReschedule) {
+        const nid = await scheduleTodoReminder({ ...task, completed: false });
+        if (nid) {
+          setTodos(prev => {
+            const up = prev.map(t => t.id === task.id ? { ...t, notificationId: nid } : t);
+            setTodoEntries(up);
+            return up;
+          });
+        }
+      }
+    }
+  };
+
   const toggleTodo = async (id) => {
     setTodos(prev => {
       const updated = prev.map(t => {
         if (t.id === id) {
           const isMarkingComplete = !t.completed;
+          
           if (isMarkingComplete && t.notificationId) {
             cancelTodoReminder(t.notificationId);
+            return { ...t, completed: true, notificationId: null };
           }
+          
           return { ...t, completed: isMarkingComplete };
         }
         return t;
@@ -327,6 +368,21 @@ export default function JournalScreen() {
       setTodoEntries(updated);
       return updated;
     });
+
+    // If it was undone, we might need to re-schedule
+    const item = todos.find(t => t.id === id);
+    if (item && item.completed) { // item was completed, now it will be incomplete
+      if (item.time) {
+        const newId = await scheduleTodoReminder({ ...item, completed: false });
+        if (newId) {
+          setTodos(prev => {
+            const up = prev.map(t => t.id === id ? { ...t, notificationId: newId } : t);
+            setTodoEntries(up);
+            return up;
+          });
+        }
+      }
+    }
   };
  
   const deleteTodo = async (id) => {
@@ -856,44 +912,66 @@ export default function JournalScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Tasks List */}
-              {todoFilter === 'history' ? (
-                todos.filter(t => t.date < getLocalDateString() && !t.completed).length === 0 ? (
-                  <View style={styles.emptyContainer}>
-                    <Feather name="smile" size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
-                    <Text style={styles.emptyText}>{t('noPastTodo')}</Text>
-                  </View>
-                ) : (
-                  todos
-                    .filter(t => t.date < getLocalDateString() && !t.completed)
-                    .map(item => (
-                      <TodoItem 
-                        key={item.id} 
-                        item={item} 
-                        onToggle={toggleTodo} 
-                        onDelete={deleteTodo} 
-                      />
-                    ))
-                )
-              ) : todos.filter(t => t.date === getLocalDateString() && (todoFilter === 'active' ? !t.completed : t.completed)).length === 0 ? (
-                <View style={styles.emptyContainer}>
-                  <Feather name={todoFilter === 'active' ? "check-circle" : "info"} size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
-                  <Text style={styles.emptyText}>
-                    {todoFilter === 'active' ? t('noTodo') : t('noCompletedTodo')}
-                  </Text>
-                </View>
-              ) : (
-                todos
-                  .filter(t => t.date === getLocalDateString() && (todoFilter === 'active' ? !t.completed : t.completed))
-                  .map(item => (
-                    <TodoItem 
-                      key={item.id} 
-                      item={item} 
-                      onToggle={toggleTodo} 
-                      onDelete={deleteTodo} 
-                    />
-                  ))
-              )}
+              {/* Tasks List Grouped by Categories */}
+              {(() => {
+                const today = getLocalDateString();
+                const filtered = todos.filter(t => 
+                  (todoFilter === 'history' ? t.date < today && !t.completed : t.date === today && (todoFilter === 'active' ? !t.completed : t.completed))
+                );
+
+                if (filtered.length === 0) {
+                  return (
+                    <View style={styles.emptyContainer}>
+                      <Feather name={todoFilter === 'active' ? "check-circle" : "info"} size={48} color="#2A2A2A" style={{ marginBottom: 16 }} />
+                      <Text style={styles.emptyText}>
+                        {todoFilter === 'active' ? t('noTodo') : t('noCompletedTodo')}
+                      </Text>
+                    </View>
+                  );
+                }
+
+                const categoryConfig = [
+                  { key: 'morning', label: t('morning'), icon: 'sun', color: '#FFB300' },
+                  { key: 'afternoon', label: t('afternoon'), icon: 'cloud-sun', color: '#03A9F4' },
+                  { key: 'evening', label: t('evening'), icon: 'moon', color: '#9C27B0' },
+                  { key: 'general', label: t('general'), icon: 'list', color: '#888' },
+                ];
+
+                return categoryConfig.map(cat => {
+                  const catTasks = filtered.filter(t => (t.category || 'general') === cat.key);
+                  if (catTasks.length === 0) return null;
+
+                  const allCatCompleted = catTasks.every(t => t.completed);
+
+                  return (
+                    <View key={cat.key} style={styles.categorySection}>
+                      <View style={styles.categoryHeader}>
+                        <View style={styles.categoryTitleGroup}>
+                          <Feather name={cat.icon} size={16} color={cat.color} />
+                          <Text style={[styles.categoryTitle, { color: cat.color }]}>{cat.label}</Text>
+                        </View>
+                        {todoFilter !== 'history' && (
+                          <TouchableOpacity 
+                            style={[styles.categoryCheckbox, allCatCompleted && styles.categoryCheckboxChecked]}
+                            onPress={() => toggleCategory(cat.key, !allCatCompleted)}
+                          >
+                            {allCatCompleted && <Feather name="check" size={12} color="#000" />}
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      
+                      {catTasks.map(item => (
+                        <TodoItem 
+                          key={item.id} 
+                          item={item} 
+                          onToggle={toggleTodo} 
+                          onDelete={deleteTodo} 
+                        />
+                      ))}
+                    </View>
+                  );
+                });
+              })()}
             </View>
           ) : viewMode === 'heatmap' ? (
             <>
@@ -1654,10 +1732,47 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: '#555',
-    fontSize: 15,
+    fontSize: 16,
     textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: 40,
+    fontWeight: '500',
+  },
+  categorySection: {
+    marginBottom: 20,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  categoryTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  categoryTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  categoryCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoryCheckboxChecked: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  planSection: {
+    padding: 20,
+    paddingBottom: 100,
   },
   statsTitle: {
     color: '#fff',

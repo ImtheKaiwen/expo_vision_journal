@@ -76,17 +76,25 @@ export async function requestNotificationPermissionsFromUser() {
 async function scheduleDailyFromSettings(settings) {
   await Notifications.cancelAllScheduledNotificationsAsync();
   
-  let title = 'Vizyon Vakti';
-  let body = 'Bugün olmak istediğin kişiyi hatırla, notlarını oku.';
+  const lang = settings.language || 'tr';
+  const quotesEnabled = settings.motivationalNotifsEnabled;
+  const morningHour = settings.notificationHour ?? 9;
+  const morningMinute = settings.notificationMinute ?? 0;
+
+  // Morning Notification
+  await scheduleSingleNotification(morningHour, morningMinute, lang, quotesEnabled);
   
-  if (settings.motivationalNotifsEnabled) {
-    const lang = settings.language || 'tr';
+  // Evening Notification (Fixed at 21:00)
+  await scheduleSingleNotification(21, 0, lang, quotesEnabled);
+}
+
+async function scheduleSingleNotification(hour, minute, lang, quotesEnabled) {
+  let title = lang === 'en' ? 'Vision Time' : 'Vizyon Vakti';
+  let body = lang === 'en' ? 'Remember who you want to be today, read your notes.' : 'Bugün olmak istediğin kişiyi hatırla, notlarını oku.';
+  
+  if (quotesEnabled) {
     const quotes = MOTIVATIONAL_QUOTES[lang] || MOTIVATIONAL_QUOTES['tr'];
     body = quotes[Math.floor(Math.random() * quotes.length)];
-    if (lang === 'en') title = 'Vision Time';
-  } else if (settings.language === 'en') {
-    title = 'Vision Time';
-    body = 'Remember who you want to be today, read your notes.';
   }
 
   await Notifications.scheduleNotificationAsync({
@@ -96,8 +104,8 @@ async function scheduleDailyFromSettings(settings) {
     },
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-      hour: settings.notificationHour ?? 9,
-      minute: settings.notificationMinute ?? 0,
+      hour,
+      minute,
       repeats: true,
     },
   });

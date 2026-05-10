@@ -30,10 +30,14 @@ export const generateAIPlan = async (userInput, existingTodos = [], currentDate 
             1. Analyze user input and create NEW tasks.
             2. NEVER duplicate existing active tasks.
             3. Return ONLY a JSON array of objects. 
-               Ex: [{"text": "Breakfast", "time": "09:00", "isTimeAmbiguous": false}]
-            4. If time is ambiguous (e.g. "at 7" but AM/PM unknown), set "isTimeAmbiguous": true and assign a default "time" (e.g. "07:00").
-            5. "time" field MUST be in HH:mm format. Calculate relative expressions like "in 20 mins" based on ${currentTime}.
-            6. Respond in ${lang === 'en' ? 'English' : 'Turkish'}.`
+               Ex: [{"text": "Breakfast", "time": "09:00", "isTimeAmbiguous": false, "category": "morning"}]
+            4. Assign a "category" to each task: "morning" (05:00-12:00), "afternoon" (12:00-17:00), "evening" (17:00-04:59), or "general" (no time/specific time of day).
+            5. Even if no time is specified, use context (e.g., "Breakfast" is "morning").
+            6. ONLY include "time" if specified (e.g. "at 7", "afternoon", "9 pm") or relative ("in 1 hour"). Otherwise, set "time": null.
+            7. If time is ambiguous (e.g. "at 7" without AM/PM or "morning/evening" context), set "isTimeAmbiguous": true.
+            8. If user explicitly says "at 7 pm" or "evening 7", set "time": "19:00" and "isTimeAmbiguous": false.
+            9. "time" field MUST be in HH:mm format. Calculate relative expressions like "in 20 mins" based on ${currentTime}.
+            10. Respond in ${lang === 'en' ? 'English' : 'Turkish'}.`
           },
           { role: 'user', content: userInput }
         ],
@@ -82,80 +86,59 @@ export const transcribeAudio = async (uri) => {
 };
 
 export const analyzeMealImage = async (base64Image, userNote, lang = 'tr') => {
-  console.log('--- CLAUDE GENEL ANALİZ ---');
-  if (!CLAUDE_API_KEY) throw new Error('Claude API Key missing in .env');
+  console.log('--- GEMINI 2.5 FLASH + GOOGLE SEARCH ANALİZİ ---');
+  const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  if (!GEMINI_API_KEY) throw new Error('Gemini API Key missing');
 
-  const systemPrompt = `You are a world-class forensic nutrition expert with elite visual recognition skills for global cuisines, specializing in Turkish, Middle Eastern, and Mediterranean dishes.
+  const promptText = `Analyze this meal image. First, identify the food items. 
+  Then, USE GOOGLE SEARCH to find the most accurate and up-to-date calories and macros for these specific items, especially considering any brand names or portions mentioned in this note: "${userNote}".
   
-  IDENTIFICATION GUIDE:
-  - İskender Kebap: Thinly sliced doner meat (meat slices, not minced) served over pide bread pieces, topped with hot tomato sauce and melted butter, with yogurt on the side and roasted peppers/tomatoes.
-  - Adana/Urfa Kebap: Minced meat molded onto a skewer, grilled, and served with lavaş, onion salad, and roasted vegetables (No yogurt or tomato sauce on top).
+  You must provide a realistic scientific breakdown.
   
-  CORE CALCULATION LOGIC:
-  1. ACCURATE IDENTIFICATION: Analyze the texture of the meat. If it's sliced döner meat with sauce and yogurt, it is "İskender Kebap".
-  2. SCALE ANALYSIS: Compare food to utensils/table to estimate grams.
-  3. QUANTITY: Use User Note "${userNote}" for multipliers.
-  
-  STRICT RULES:
-  - If it's İskender, account for the butter and pide bread (high calorie density).
-  - CULTURAL ACCURACY: Use precise names.
-  - TEXT-ONLY MODE: If no image is provided, analyze based ONLY on the user note. Single meal names (e.g. "İskender", "Adana Kebap") are VALID inputs.
-  - Gibberish Note (e.g. "asdf", "qwerty") -> isFood: false.
-  - Respond ONLY with valid JSON.
-  
-  JSON Structure:
+  Respond ONLY with valid JSON:
   {
     "isFood": true,
-    "name": "Food Name (Amount/Portion) - in ${lang === 'en' ? 'English' : 'Turkish'}",
+    "name": "Food Name (Portion) - in ${lang === 'en' ? 'English' : 'Turkish'}",
     "calories": 0,
     "protein": 0,
     "fat": 0,
     "carbs": 0,
     "estimatedWeightGrams": 0,
-    "reasoning": "Explanation of calculation - in ${lang === 'en' ? 'English' : 'Turkish'}.",
+    "reasoning": "Breakdown using live Google Search data - in ${lang === 'en' ? 'English' : 'Turkish'}.",
     "errorMessage": "Error message - in ${lang === 'en' ? 'English' : 'Turkish'}"
   }`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              ...(base64Image ? [{
-                type: 'image',
-                source: { type: 'base64', media_type: 'image/jpeg', data: base64Image }
-              }] : []),
-              { type: 'text', text: userNote?.trim() ? `Analyze this meal based on the note: "${userNote}".` : `Analyze this meal based on the image provided.` }
-            ]
-          }
-        ]
+        contents: [{
+          parts: [
+            { text: promptText },
+            ...(base64Image ? [{
+              inline_data: { mime_type: "image/jpeg", data: base64Image }
+            }] : [])
+          ]
+        }],
+        tools: [{ google_search: {} }]
       })
     });
 
     const data = await response.json();
     if (data.error) throw new Error(data.error.message);
 
-    let text = data.content[0].text;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      console.log('Parsed Yanıt:', parsed);
-      return { ...parsed, success: parsed.isFood };
-    }
-    throw new Error('Geçerli JSON bulunamadı');
+    const rawText = data.candidates[0].content.parts[0].text;
+    console.log('Gemini Ham Yanıt:', rawText);
+    
+    // JSON'u metin içinden ayıkla
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Geçerli JSON bulunamadı');
+    
+    const parsed = JSON.parse(jsonMatch[0]);
+    return { ...parsed, success: parsed.isFood };
   } catch (error) {
-    console.error('Meal Claude Analysis Error:', error);
+    console.error('Meal Gemini Analysis Error:', error);
     throw error;
   }
 };

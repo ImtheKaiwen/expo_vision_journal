@@ -14,7 +14,8 @@ export default function ShareStreakCard({ streak, userName, type = 'streak', t }
   } else {
     if (streak >= 30) dynamicText = t('streakText30');
     else if (streak >= 10) dynamicText = t('streakText10');
-    else dynamicText = t('streakText0');
+    else if (streak >= 2) dynamicText = t('streakText2to9').replace('{{streak}}', streak);
+    else dynamicText = t('streakText1');
   }
 
   return (

@@ -60,7 +60,8 @@ export default function TodoItem({ item, onToggle, onDelete }) {
       onSwipeableLeftOpen={handleToggle}
       overshootLeft={false}
       overshootRight={false}
-      friction={1}
+      friction={2}
+      activeOffsetX={[-10, 10]}
     >
       <View style={styles.container}>
         <TouchableOpacity

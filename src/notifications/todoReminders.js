@@ -37,15 +37,16 @@ export const scheduleTodoReminder = async (todo) => {
     if (!allowsNotifications(perm)) return null;
 
     const [year, month, day] = todo.date.split('-').map(Number);
-    const triggerDate = new Date(year, month - 1, day, time.hours, time.minutes);
-    
-    // Normalde 30 dakika öncesine kur
-    let reminderDate = new Date(triggerDate.getTime() - 30 * 60000);
-
+    let triggerDate = new Date(year, month - 1, day, time.hours, time.minutes);
     const now = new Date();
     
-    // Eğer görev saati zaten geçtiyse kurma
-    if (triggerDate <= now) return null;
+    // Eğer görev saati bugün için zaten geçtiyse, yarın aynı saate kur (Planlayıcı mantığı)
+    if (triggerDate <= now) {
+      triggerDate.setDate(triggerDate.getDate() + 1);
+    }
+
+    // Normalde 30 dakika öncesine kur
+    let reminderDate = new Date(triggerDate.getTime() - 30 * 60000);
 
     // Eğer 30 dakika öncesi geçmişte kaldıysa (yani görev 30 dk'dan yakınsa), 
     // hemen 1 dakika sonrasına hatırlatıcı kur.
