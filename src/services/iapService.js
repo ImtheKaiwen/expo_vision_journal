@@ -26,7 +26,7 @@ export const setupIAP = async () => {
     } else if (Platform.OS === 'android') {
       await Purchases.configure({ apiKey: API_KEYS.google });
     }
-    
+
     console.log('--- RevenueCat Başarıyla Yapılandırıldı ---');
   } catch (e) {
     console.error('IAP Setup Error:', e);

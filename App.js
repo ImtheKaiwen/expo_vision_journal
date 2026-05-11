@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, Animated, DeviceEventEmitter } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, Animated, DeviceEventEmitter, AppState, Linking, Modal } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { Feather } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
@@ -24,6 +24,8 @@ import {
 import { scheduleVisionCheckinNotification } from './src/notifications/visionCheckin';
 import { APP_SETTINGS_CHANGED } from './src/events/appSettings';
 import { setupIAP } from './src/services/iapService';
+import { checkForUpdate } from './src/services/updateService';
+import { useI18n } from './src/utils/i18n';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -44,6 +46,9 @@ export default function App() {
   const [pinCode, setPinCode] = useState(null);
   const [showPinScreen, setShowPinScreen] = useState(false);
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const lastAuthTime = useRef(0);
+  const appState = useRef(AppState.currentState);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const notificationLaunchHandled = useRef(false);
 
@@ -52,7 +57,7 @@ export default function App() {
       try {
         const settings = await getAppSettings();
         setIsOnboarded(settings.isOnboarded !== false);
-        
+
         let method = settings.authMethod;
         if (!method) method = settings.biometricEnabled === false ? 'none' : 'biometric';
         setAuthMethod(method);
@@ -61,6 +66,13 @@ export default function App() {
         if (method === 'none') {
           setIsAuthenticated(true);
         }
+
+        // Update Check
+        const update = await checkForUpdate();
+        if (update.updateRequired) {
+          setUpdateInfo(update);
+        }
+
         await rescheduleDailyNotificationsIfGranted();
         await scheduleVisionCheckinNotification();
         await setupIAP();
@@ -71,6 +83,27 @@ export default function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active' &&
+        authMethod !== 'none' &&
+        isOnboarded
+      ) {
+        const now = Date.now();
+        if (now - lastAuthTime.current > 30000) {
+          setIsAuthenticated(false);
+          setShowPinScreen(false);
+        }
+      }
+      appState.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [authMethod, isOnboarded]);
 
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(APP_SETTINGS_CHANGED, async () => {
@@ -127,6 +160,7 @@ export default function App() {
 
       if (biometricAuth.success) {
         fadeAnim.setValue(0);
+        lastAuthTime.current = Date.now();
         setIsAuthenticated(true);
       } else {
         if (pinCode) setShowPinScreen(true);
@@ -135,17 +169,17 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!bootReady || !hardwareReady || authMethod === 'none' || !isOnboarded) return;
+    if (!bootReady || !hardwareReady || authMethod === 'none' || !isOnboarded || isAuthenticated || updateInfo) return;
     if (authMethod === 'biometric' && !isBiometricSupported && pinCode) {
       setShowPinScreen(true);
       return;
     }
     if (authMethod === 'biometric' && !isBiometricSupported && !pinCode) {
-       setIsAuthenticated(true);
-       return;
+      setIsAuthenticated(true);
+      return;
     }
     if (!isAuthenticated && !showPinScreen) handleAuthentication();
-  }, [isBiometricSupported, bootReady, authMethod, hardwareReady, isOnboarded, isAuthenticated, showPinScreen]);
+  }, [isBiometricSupported, bootReady, authMethod, hardwareReady, isOnboarded, isAuthenticated, showPinScreen, updateInfo]);
 
   /** Ana ekrana geçince: yalnızca hiç sorulmadıysa (undetermined) sistem izin penceresini göster. */
   useEffect(() => {
@@ -177,9 +211,9 @@ export default function App() {
   if (!bootReady) {
     return (
       <View style={styles.bootSplash}>
-        <Animated.Image 
-          source={require('./assets/icon.png')} 
-          style={[styles.splashIcon, { opacity: fadeAnim }]} 
+        <Animated.Image
+          source={require('./assets/icon.png')}
+          style={[styles.splashIcon, { opacity: fadeAnim }]}
           resizeMode="contain"
         />
         <Animated.Text style={[styles.splashText, { opacity: fadeAnim }]}>
@@ -189,7 +223,24 @@ export default function App() {
     );
   }
 
-  const renderContent = () => {
+  const RenderContent = () => {
+    const { t } = useI18n();
+    if (updateInfo) {
+      return (
+        <View style={styles.updateContainer}>
+          <Feather name="arrow-up-circle" size={80} color="#FFD700" style={{ marginBottom: 30 }} />
+          <Text style={styles.updateTitle}>{t('updateRequiredTitle')}</Text>
+          <Text style={styles.updateMsg}>{t('updateRequiredMsg')}</Text>
+          <TouchableOpacity
+            style={styles.updateBtn}
+            onPress={() => Linking.openURL(updateInfo.storeUrl)}
+          >
+            <Text style={styles.updateBtnText}>{t('updateBtn')}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     if (!isOnboarded) {
       return (
         <OnboardingScreen onFinish={() => setIsOnboarded(true)} />
@@ -200,8 +251,8 @@ export default function App() {
       return (
         <View style={styles.authContainer}>
           {showPinScreen ? (
-            <PinAuth 
-              correctPin={pinCode} 
+            <PinAuth
+              correctPin={pinCode}
               onSuccess={() => { setShowPinScreen(false); setIsAuthenticated(true); fadeAnim.setValue(0); }}
               onBiometricFallback={authMethod === 'biometric' ? () => { setShowPinScreen(false); handleAuthentication(); } : null}
             />
@@ -254,7 +305,7 @@ export default function App() {
     <I18nProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Animated.View style={{ flex: 1, opacity: fadeAnim, backgroundColor: '#121212' }}>
-          {renderContent()}
+          <RenderContent />
         </Animated.View>
       </GestureHandlerRootView>
     </I18nProvider>
@@ -283,4 +334,36 @@ const styles = StyleSheet.create({
   bootSplash: { flex: 1, backgroundColor: '#121212', justifyContent: 'center', alignItems: 'center' },
   splashIcon: { width: 120, height: 120, marginBottom: 24 },
   splashText: { color: '#fff', fontSize: 18, fontWeight: '600', letterSpacing: 1 },
+  updateContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: '#121212',
+  },
+  updateTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  updateMsg: {
+    color: '#A0A0A0',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 40,
+  },
+  updateBtn: {
+    backgroundColor: '#FFD700',
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    borderRadius: 20,
+  },
+  updateBtnText: {
+    color: '#000',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
 });

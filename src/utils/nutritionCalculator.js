@@ -21,7 +21,7 @@ export const GOAL_MODIFIERS = {
  * Kullanıcı verilerine göre günlük kalori ve makro hedeflerini hesaplar.
  */
 export function calculateDailyTargets({ gender, weight, height, age, activityLevel, goal }) {
-  // 1. BMR (Bazal Metabolizma Hızı) Hesaplama
+  // 1. BMR (Bazal Metabolizma Hızı) Hesaplama - Mifflin-St Jeor
   let bmr;
   if (gender === 'male') {
     bmr = 10 * weight + 6.25 * height - 5 * age + 5;
@@ -34,30 +34,47 @@ export function calculateDailyTargets({ gender, weight, height, age, activityLev
   const tdee = bmr * multiplier;
 
   // 3. Hedefe Göre Kalori Ayarı
-  const modifier = GOAL_MODIFIERS[goal] || 0;
-  const targetCalories = Math.round(tdee + modifier);
+  let targetCalories;
+  if (goal === 'lose') {
+    // TDEE'den %20 açık vermek en sağlıklı ve sürdürülebilir yöntemdir
+    const deficit = tdee * 0.20;
+    targetCalories = tdee - deficit;
+    
+    // GÜVENLİK DUVARI: Hedef asla Bazal Metabolizma Hızının (BMR) altına düşmemeli
+    if (targetCalories < bmr) {
+      targetCalories = bmr;
+    }
+  } else if (goal === 'gain') {
+    // Kilo almak için %15-20 fazlalık idealdir
+    targetCalories = tdee + (tdee * 0.15);
+  } else {
+    targetCalories = tdee;
+  }
 
-  // 4. Makro Dağılımı (Protein: 2g/kg, Yağ: %25, Karb: Kalan)
-  // Protein (1g = 4 kcal)
-  const proteinGrams = Math.round(weight * 2);
-  const proteinKcal = proteinGrams * 4;
+  targetCalories = Math.round(targetCalories);
 
-  // Yağ (1g = 9 kcal) - Toplam kalorinin %25'i
+  // 4. Makro Dağılımı (Daha Dengeli: Protein %25, Yağ %25, Karb %50)
+  // Protein (1g = 4 kcal) - Kas koruması için %25 ideal
+  const proteinKcal = targetCalories * 0.25;
+  const proteinGrams = Math.round(proteinKcal / 4);
+
+  // Yağ (1g = 9 kcal) - Hormonal denge için %25
   const fatKcal = targetCalories * 0.25;
   const fatGrams = Math.round(fatKcal / 9);
 
-  // Karbonhidrat (1g = 4 kcal) - Kalan kalori
+  // Karbonhidrat (1g = 4 kcal) - Enerji için kalan %50
   const carbsKcal = targetCalories - (proteinKcal + fatKcal);
   const carbsGrams = Math.round(carbsKcal / 4);
 
-  // Su Hedefi (Her 30kg için 1 litre kuralı + basitlik)
-  const waterGoal = Math.round((weight * 35)); // ml cinsinden
+  // Su Hedefi (Kilo başına 35ml kuralı)
+  const waterGoal = Math.round(weight * 35);
 
   return {
     calories: targetCalories,
     protein: proteinGrams,
     fat: fatGrams,
     carbs: carbsGrams,
-    waterGoal: waterGoal
+    waterGoal: waterGoal,
+    bmr: Math.round(bmr) // BMR bilgisini de dönersek UI'da "Minimum Sınır" olarak gösterebiliriz
   };
 }

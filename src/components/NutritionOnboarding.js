@@ -51,7 +51,7 @@ export default function NutritionOnboarding({ onFinish }) {
       weight: parseFloat(data.weight),
       height: parseInt(data.height),
     };
-    
+
     const targets = calculateDailyTargets(numericData);
     const finalSettings = {
       ...numericData,
@@ -145,15 +145,21 @@ export default function NutritionOnboarding({ onFinish }) {
         return (
           <View style={styles.stepContainer}>
             <Text style={styles.title}>{t('whatIsGoal')}</Text>
-            <View style={styles.optionGrid}>
+            <View style={[styles.optionGrid, { flexWrap: 'wrap', gap: 10 }]}>
               {GOALS.map(g => (
                 <TouchableOpacity
                   key={g.id}
-                  style={[styles.optionCard, { flex: 0, width: '30%', minWidth: 100 }, data.goal === g.id && styles.optionCardActive]}
+                  style={[styles.optionCard, { flex: 1, minWidth: '30%', height: 110 }, data.goal === g.id && styles.optionCardActive]}
                   onPress={() => setData({ ...data, goal: g.id })}
                 >
                   <Feather name={g.icon} size={28} color={data.goal === g.id ? '#000' : '#fff'} />
-                  <Text style={[styles.optionLabel, { fontSize: 13 }, data.goal === g.id && styles.optionLabelActive]}>{g.label}</Text>
+                  <Text 
+                    numberOfLines={1} 
+                    adjustsFontSizeToFit 
+                    style={[styles.optionLabel, { fontSize: 13, paddingHorizontal: 4 }, data.goal === g.id && styles.optionLabelActive]}
+                  >
+                    {g.label}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -201,7 +207,7 @@ const styles = StyleSheet.create({
   optionGrid: { flexDirection: 'row', justifyContent: 'center', gap: 20 },
   optionCard: { flex: 1, maxWidth: 160, aspectRatio: 0.9, backgroundColor: '#1E1E1E', borderRadius: 28, justifyContent: 'center', alignItems: 'center', gap: 12, borderWidth: 2, borderColor: 'transparent' },
   optionCardActive: { backgroundColor: '#fff', borderColor: '#fff' },
-  optionLabel: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  optionLabel: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
   optionLabelActive: { color: '#000' },
   inputGroup: { marginBottom: 24 },
   inputLabel: { color: '#A0A0A0', fontSize: 14, marginBottom: 8 },

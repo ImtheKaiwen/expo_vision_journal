@@ -315,74 +315,60 @@ export default function JournalScreen() {
 
   const toggleCategory = async (categoryKey, markComplete) => {
     const today = getLocalDateString();
-    let newNotificationIds = {};
-
-    setTodos(prev => {
-      const updated = prev.map(t => {
-        if (t.date === today && t.category === categoryKey) {
-          if (markComplete && !t.completed) {
-            if (t.notificationId) cancelTodoReminder(t.notificationId);
-            return { ...t, completed: true, notificationId: null };
-          } else if (!markComplete && t.completed) {
-            // Undo logic for batch will be handled after state update for simplicity or skipped if too complex
-            return { ...t, completed: false };
-          }
-        }
-        return t;
-      });
-      setTodoEntries(updated);
-      return updated;
-    });
-
-    // Handle re-scheduling for undone tasks in batch
-    if (!markComplete) {
-      const tasksToReschedule = todos.filter(t => t.date === today && t.category === categoryKey && t.completed && t.time);
-      for (const task of tasksToReschedule) {
-        const nid = await scheduleTodoReminder({ ...task, completed: false });
-        if (nid) {
-          setTodos(prev => {
-            const up = prev.map(t => t.id === task.id ? { ...t, notificationId: nid } : t);
-            setTodoEntries(up);
-            return up;
-          });
+    
+    // Tüm güncel listeyi alalım
+    const currentTodos = [...todos];
+    const updated = await Promise.all(currentTodos.map(async t => {
+      if (t.date === today && t.category === categoryKey) {
+        if (markComplete && !t.completed) {
+          // Tamamlanıyor: Bildirimi iptal et
+          if (t.notificationId) await cancelTodoReminder(t.notificationId);
+          return { ...t, completed: true, notificationId: null };
+        } else if (!markComplete && t.completed) {
+          // Geri alınıyor: Bildirimi tekrar kur
+          const newId = await scheduleTodoReminder({ ...t, completed: false });
+          return { ...t, completed: false, notificationId: newId };
         }
       }
-    }
+      return t;
+    }));
+
+    setTodos(updated);
+    await setTodoEntries(updated);
+    if (!markComplete) setTimeout(loadScheduledNotifications, 500);
   };
 
   const toggleTodo = async (id) => {
-    setTodos(prev => {
-      const updated = prev.map(t => {
-        if (t.id === id) {
-          const isMarkingComplete = !t.completed;
-          
-          if (isMarkingComplete && t.notificationId) {
-            cancelTodoReminder(t.notificationId);
-            return { ...t, completed: true, notificationId: null };
-          }
-          
-          return { ...t, completed: isMarkingComplete };
-        }
-        return t;
-      });
-      setTodoEntries(updated);
-      return updated;
-    });
+    const currentTodos = [...todos];
+    const itemIndex = currentTodos.findIndex(t => t.id === id);
+    if (itemIndex === -1) return;
 
-    // If it was undone, we might need to re-schedule
-    const item = todos.find(t => t.id === id);
-    if (item && item.completed) { // item was completed, now it will be incomplete
-      if (item.time) {
-        const newId = await scheduleTodoReminder({ ...item, completed: false });
-        if (newId) {
-          setTodos(prev => {
-            const up = prev.map(t => t.id === id ? { ...t, notificationId: newId } : t);
-            setTodoEntries(up);
-            return up;
-          });
-        }
+    const item = currentTodos[itemIndex];
+    const isMarkingComplete = !item.completed;
+    let updatedItem = { ...item, completed: isMarkingComplete };
+
+    if (isMarkingComplete) {
+      // Tamamlanıyorsa bildirimi iptal et
+      if (item.notificationId) {
+        await cancelTodoReminder(item.notificationId);
+        updatedItem.notificationId = null;
+      }
+    } else {
+      // Geri alınıyorsa bildirimi tekrar kur (eğer saati varsa)
+      const newId = await scheduleTodoReminder({ ...item, completed: false });
+      if (newId) {
+        updatedItem.notificationId = newId;
       }
     }
+
+    const updatedList = [...currentTodos];
+    updatedList[itemIndex] = updatedItem;
+    
+    setTodos(updatedList);
+    await setTodoEntries(updatedList);
+    
+    // Listeyi tazele
+    if (!isMarkingComplete) setTimeout(loadScheduledNotifications, 500);
   };
  
   const deleteTodo = async (id) => {

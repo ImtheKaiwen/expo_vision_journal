@@ -13,7 +13,7 @@ export default function TodoItem({ item, onToggle, onDelete }) {
       <View style={styles.deleteSwipe}>
         <Feather name="trash-2" size={20} color="#fff" />
 
-        <Text style={styles.swipeText}>
+        <Text style={styles.swipeText} numberOfLines={1}>
           {t('delete')}
         </Text>
       </View>
@@ -44,7 +44,7 @@ export default function TodoItem({ item, onToggle, onDelete }) {
           color="#fff"
         />
 
-        <Text style={styles.swipeText}>
+        <Text style={styles.swipeText} numberOfLines={1}>
           {item.completed ? t('undo') : t('markDone')}
         </Text>
       </View>
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 16,
     marginBottom: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     gap: 8,
   },
 
@@ -170,7 +170,8 @@ const styles = StyleSheet.create({
   swipeText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 12,
+    flexShrink: 1,
   },
   deleteSwipe: {
     flex: 1,
@@ -180,7 +181,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#E53935',
     borderRadius: 16,
     marginBottom: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     gap: 8,
   }
 });

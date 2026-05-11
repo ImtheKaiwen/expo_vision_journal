@@ -50,21 +50,24 @@ export default function AudioItem({
       onSelect();
       return;
     }
+
+    // Eğer zaten oynatılıyorsa, durdururken şifre sorma
+    if (isPlaying && sound) {
+      await sound.pauseAsync();
+      setIsPlaying(false);
+      return;
+    }
+
     const isAuth = await checkAuth();
     if (!isAuth) return;
 
     if (sound) {
-      if (isPlaying) {
-        await sound.pauseAsync();
-        setIsPlaying(false);
-      } else {
-        const status = await sound.getStatusAsync();
-        if (status.positionMillis >= status.durationMillis) {
-          await sound.setPositionAsync(0);
-        }
-        await sound.playAsync();
-        setIsPlaying(true);
+      const status = await sound.getStatusAsync();
+      if (status.positionMillis >= status.durationMillis) {
+        await sound.setPositionAsync(0);
       }
+      await sound.playAsync();
+      setIsPlaying(true);
     } else {
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: item.uri },

@@ -169,10 +169,27 @@ const tr = {
   tutorialJournalDesc: 'Her gün neler hissettiğini, neler yaşadığını yaz. Takvim görünümü ile geçmişe yolculuk yap.',
   tutorialAddVisionTitle: 'Yeni Vizyon Ekle',
   tutorialAddVisionDesc: 'Listenin en üstündeyken ekranı aşağı kaydırarak yeni hedeflerini kolayca eklemeye başla.',
+  tutorialAudioTitle: 'Sesli Günlük Tut',
+  tutorialAudioDesc: 'Sadece yazmakla kalma. Sesli notlar alarak duygularını en saf haliyle sakla.',
+  tutorialVideoTitle: 'Video Günlükler',
+  tutorialVideoDesc: 'Kendi kendine konuşarak (Self-Talk) rahatla ve video günlüklerinle anılarını ölümsüzleştir.',
+  tutorialTodoTitle: 'Gününüzü Planlayın',
+  tutorialTodoDesc: 'Görevlerini ekle, hatırlatıcılar kur ve gününü verimli bir şekilde organize et.',
+  tutorialAIPlannerTitle: 'AI ile Akıllı Planlama',
+  tutorialAIPlannerDesc: "Sadece ne yapmak istediğini söyle, Vision AI senin için tüm planı saniyeler içinde oluştursun.",
+  tutorialAIVisionTitle: 'AI Yemek Analizi',
+  tutorialAIVisionDesc: 'Yemeğinin fotoğrafını çek, kalorilerini ve makrolarını anında öğren. Beslenmeni kontrol altında tut.',
+  tutorialAiSimInput: '"Yarın sabah 9\'da toplantı, akşam 7\'de tenis..."',
+  tutorialAiSimResult1: '09:00 - Önemli Toplantı',
+  tutorialAiSimResult2: '19:00 - Tenis Maçı',
+  tutorialAiVisionMealName: 'Akdeniz Salatası',
   journalNoEntryList: 'Buralar henüz sessiz... Gününü not almak için tüy ikonuna dokunmaya ne dersin?',
   heatmapHint: 'Son 4 aylık yolculuğunun aktivite özeti',
   statsTitle: 'İstatistikler',
   totalEntries: 'Toplam Kayıt',
+  updateRequiredTitle: 'Güncelleme Gerekli',
+  updateRequiredMsg: 'Vision Journal\'ın yeni bir sürümü mevcut. Devam etmek için lütfen uygulamayı güncelleyin.',
+  updateBtn: 'Şimdi Güncelle',
   mostActiveDay: 'En Aktif Gün',
   mostActiveDayFull: 'En aktif olduğun gün',
   currStreak: 'Mevcut Seri',
@@ -256,7 +273,7 @@ const tr = {
   activityLevel: 'Hareket Seviyen',
   whatIsGoal: 'Hedefin Nedir?',
   back: 'Geri',
-  
+
   // Todo
   todoPlaceholder: 'Bugün ne yapacaksın?',
   addTodo: 'Görev Ekle',
@@ -264,7 +281,7 @@ const tr = {
   todoAIPlaceholder: 'AI ile plan oluştur (Yakında)',
   todoAIBtn: 'Yapay Zeka ile Planla',
   todoTitle: 'Yapılacaklar',
-  todoCompleted: 'Tamamlandı',
+  todoCompleted: 'Bitti',
   todoRemaining: 'Kaldı',
   showCompleted: 'Tamamlananları Göster',
   hideCompleted: 'Tamamlananları Gizle',
@@ -564,10 +581,27 @@ const en = {
   tutorialJournalDesc: 'Write down how you feel and what you experience every day. Travel back in time with the calendar view.',
   tutorialAddVisionTitle: 'Add New Vision',
   tutorialAddVisionDesc: 'Start easily adding new goals by pulling down at the top of the list.',
+  tutorialAudioTitle: 'Voice Journal',
+  tutorialAudioDesc: "Don't just write. Record voice notes and keep your emotions in their purest form.",
+  tutorialVideoTitle: 'Video Journals',
+  tutorialVideoDesc: 'Relax with self-talk and immortalize your memories with video journals.',
+  tutorialTodoTitle: 'Plan Your Day',
+  tutorialTodoDesc: 'Add your tasks, set reminders, and organize your day efficiently.',
+  tutorialAIPlannerTitle: 'Smart Planning with AI',
+  tutorialAIPlannerDesc: 'Just say what you want to do, Vision AI will create the entire plan for you in seconds.',
+  tutorialAIVisionTitle: 'AI Nutrition Analysis',
+  tutorialAIVisionDesc: 'Take a photo of your meal, instantly learn calories and macros. Keep your nutrition under control.',
+  tutorialAiSimInput: '"Meeting at 9 AM, tennis at 7 PM tomorrow..."',
+  tutorialAiSimResult1: '09:00 - Important Meeting',
+  tutorialAiSimResult2: '19:00 - Tennis Match',
+  tutorialAiVisionMealName: 'Mediterranean Salad',
   journalNoEntryList: 'It looks a bit quiet here... How about tapping the feather icon to note down your day?',
   heatmapHint: 'Activity summary of your 4-month journey',
   statsTitle: 'Statistics',
   totalEntries: 'Total Entries',
+  updateRequiredTitle: 'Update Required',
+  updateRequiredMsg: 'A newer version of Vision Journal is available. Please update the app to continue.',
+  updateBtn: 'Update Now',
   mostActiveDay: 'Most Active Day',
   mostActiveDayFull: 'Your most active day',
   currStreak: 'Current Streak',
@@ -819,3 +853,18 @@ export function I18nProvider({ children }) {
 export function useI18n() {
   return useContext(I18nContext);
 }
+
+/** 
+ * Helper for accessing translations outside of components (e.g. App.js top level)
+ * This doesn't react to language changes, it just gets the current state.
+ */
+export const getI18n = () => {
+  // We can't easily get the saved language synchronously here without async storage,
+  // so we'll just return a function that uses a best-effort or defaults to TR.
+  // In a real app, you might sync this state globally.
+  const t = (key) => {
+    // Basic implementation: check TR then EN
+    return tr[key] || en[key] || key;
+  };
+  return { t };
+};
