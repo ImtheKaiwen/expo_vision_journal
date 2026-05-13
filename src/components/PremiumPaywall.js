@@ -10,6 +10,7 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useI18n } from '../utils/i18n';
@@ -36,7 +37,6 @@ export default function PremiumPaywall({ visible, onClose, onPurchaseSuccess }) 
     const available = await getOfferings();
     setPackages(available);
     if (available.length > 0) {
-      // Varsayılan olarak yıllık veya en pahalı paketi seçelim
       const yearly = available.find(p => p.packageType === 'ANNUAL');
       setSelectedPackage(yearly || available[0]);
     }
@@ -79,7 +79,7 @@ export default function PremiumPaywall({ visible, onClose, onPurchaseSuccess }) 
     <Modal visible={visible} animationType="slide" transparent={false} presentationStyle="fullScreen">
       <View style={styles.container}>
         <View style={styles.topGradient} />
-        
+
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           <View style={styles.topBar}>
             <TouchableOpacity onPress={handleRestore}>
@@ -94,7 +94,8 @@ export default function PremiumPaywall({ visible, onClose, onPurchaseSuccess }) 
             <View style={styles.badge}>
               <Text style={styles.badgeText}>VISION PRO</Text>
             </View>
-            <Text style={styles.title}>{t('unleashPotential')}</Text>
+            <Text style={styles.headerTitle}>Vision Premium</Text>
+            <Text style={styles.headerSubtitle}>{t('unleashPotential')}</Text>
           </View>
 
           <View style={styles.featuresGrid}>
@@ -116,18 +117,23 @@ export default function PremiumPaywall({ visible, onClose, onPurchaseSuccess }) 
               <ActivityIndicator color="#FFD700" size="large" style={{ marginVertical: 30 }} />
             ) : (
               packages.map((pack) => (
-                <TouchableOpacity 
+                <TouchableOpacity
                   key={pack.identifier}
-                  style={[styles.priceCard, selectedPackage?.identifier === pack.identifier && styles.priceCardSelected]} 
+                  style={[styles.priceCard, selectedPackage?.identifier === pack.identifier && styles.priceCardSelected]}
                   onPress={() => setSelectedPackage(pack)}
                 >
                   <View>
                     <Text style={styles.priceLabel}>
-                      {pack.packageType === 'ANNUAL' ? t('yearlyMembership') : 
-                       pack.packageType === 'MONTHLY' ? t('monthlyMembership') : 
-                       pack.packageType === 'SIX_MONTH' ? t('sixMonthMembership') : t('specialMembership')}
+                      {pack.packageType === 'ANNUAL' ? t('yearlyMembership') :
+                        pack.packageType === 'MONTHLY' ? t('monthlyMembership') :
+                          pack.packageType === 'SIX_MONTH' ? t('sixMonthMembership') : t('specialMembership')}
                     </Text>
-                    <Text style={styles.priceValue}>{pack.product.priceString}</Text>
+                    <Text style={styles.priceValue}>
+                      {pack.packageType === 'ANNUAL' ? t('yearlyPrice').replace('{{price}}', pack.product.priceString) :
+                        pack.packageType === 'MONTHLY' ? t('monthlyPrice').replace('{{price}}', pack.product.priceString) :
+                          pack.packageType === 'SIX_MONTH' ? t('sixMonthPrice').replace('{{price}}', pack.product.priceString) :
+                            pack.product.priceString}
+                    </Text>
                   </View>
                   {pack.packageType === 'ANNUAL' && (
                     <View style={styles.savingsBadge}>
@@ -138,8 +144,8 @@ export default function PremiumPaywall({ visible, onClose, onPurchaseSuccess }) 
               ))
             )}
 
-            <TouchableOpacity 
-              style={[styles.mainBtn, (loading || fetching || !selectedPackage) && { opacity: 0.7 }]} 
+            <TouchableOpacity
+              style={[styles.mainBtn, (loading || fetching || !selectedPackage) && { opacity: 0.7 }]}
               onPress={handlePurchase}
               disabled={loading || fetching || !selectedPackage}
             >
@@ -156,6 +162,16 @@ export default function PremiumPaywall({ visible, onClose, onPurchaseSuccess }) 
             <Text style={styles.footerNote}>
               {t('cancelAnytime')}
             </Text>
+
+            <View style={styles.legalLinksContainer}>
+              <TouchableOpacity onPress={() => Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/')}>
+                <Text style={styles.legalLink}>{t('termsOfUse')}</Text>
+              </TouchableOpacity>
+              <Text style={styles.legalLinkSeparator}> | </Text>
+              <TouchableOpacity onPress={() => Linking.openURL('https://kaiwen.com.tr/#/privacy/vision-journal')}>
+                <Text style={styles.legalLink}>{t('privacyPolicy')}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </View>
@@ -212,16 +228,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 1,
   },
-  title: {
-    color: '#fff',
-    fontSize: 32,
+  headerTitle: {
+    fontSize: 40,
     fontWeight: '800',
+    color: '#ffffff',
     textAlign: 'center',
-    lineHeight: 40,
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.7)',
+    textAlign: 'center',
+    marginBottom: 30,
   },
   featuresGrid: {
     paddingHorizontal: 24,
-    marginTop: 30,
+    marginTop: 10,
     gap: 16,
   },
   featureCard: {
@@ -315,4 +337,21 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingHorizontal: 20,
   },
+  legalLinksContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 15,
+    marginBottom: 30,
+  },
+  legalLink: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    textDecorationLine: 'underline',
+  },
+  legalLinkSeparator: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.4)',
+    marginHorizontal: 10,
+  }
 });
