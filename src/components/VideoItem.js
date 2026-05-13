@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Video } from 'expo-av';
@@ -38,6 +39,10 @@ export default function VideoItem({
       promptMessage: t('unlockVideo'),
       fallbackLabel: t('usePassword'),
     });
+    
+    if (result.success) {
+      DeviceEventEmitter.emit('SESSION_AUTHENTICATED');
+    }
     
     return result.success;
   };

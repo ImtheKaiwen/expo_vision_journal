@@ -475,7 +475,10 @@ export default function JournalScreen() {
   const copySelected = async () => {
     const items = savedEntries.filter((e) => selectedIds.has(e.id));
     if (items.length === 0) return Alert.alert(t('warning'), t('noEntrySelected'));
-    const txt = items.map((e) => `📅 ${e.date}\n${e.text}`).join('\n\n');
+    const txt = items.map((e) => {
+      const timeStr = e.createdAt ? new Date(e.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      return `${e.date} ${timeStr}\n${e.text}`;
+    }).join('\n\n');
     await Clipboard.setStringAsync(txt);
     Alert.alert(t('copiedTitle'), `${items.length} ${t('journalsCopied')}`);
     setSelectionMode(false);

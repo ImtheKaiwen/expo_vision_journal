@@ -72,7 +72,7 @@ export default function PremiumPaywall({ visible, onClose, onPurchaseSuccess }) 
     { icon: 'cpu', title: t('aiPlanner'), desc: t('aiPlannerSubtitle'), color: '#4CAF50' },
     { icon: 'camera', title: t('paywallMealTitle'), desc: t('paywallMealDesc'), color: '#FF9800' },
     { icon: 'pie-chart', title: t('paywallAiTitle'), desc: t('paywallAiDesc'), color: '#2196F3' },
-    { icon: 'trending-up', title: t('tutorialVisionTitle'), desc: t('paywallVisionDesc'), color: '#9C27B0' }
+    { icon: 'trending-up', title: t('paywallVisionTitle'), desc: t('paywallVisionDesc'), color: '#9C27B0' }
   ];
 
   return (

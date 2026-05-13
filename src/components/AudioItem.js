@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert } from 'react-native';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  TouchableOpacity, 
+  Alert, 
+  DeviceEventEmitter 
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import * as Sharing from 'expo-sharing';
@@ -41,6 +48,10 @@ export default function AudioItem({
       promptMessage: t('unlockAudio'),
       fallbackLabel: t('usePassword'),
     });
+    
+    if (result.success) {
+      DeviceEventEmitter.emit('SESSION_AUTHENTICATED');
+    }
     
     return result.success;
   };

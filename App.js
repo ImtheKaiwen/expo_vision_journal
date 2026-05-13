@@ -15,7 +15,8 @@ import JournalScreen from './src/screens/JournalScreen';
 import NutritionScreen from './src/screens/NutritionScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import { getAppSettings } from './src/storage';
+import { getAppSettings, saveAppSettings } from './src/storage';
+import PremiumPaywall from './src/components/PremiumPaywall';
 import {
   allowsNotifications,
   requestNotificationPermissionsFromUser,
@@ -47,6 +48,8 @@ export default function App() {
   const [showPinScreen, setShowPinScreen] = useState(false);
   const [isBiometricSupported, setIsBiometricSupported] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [showAutoPaywall, setShowAutoPaywall] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
   const lastAuthTime = useRef(0);
   const appState = useRef(AppState.currentState);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -73,6 +76,18 @@ export default function App() {
           setUpdateInfo(update);
         }
 
+        setIsPremium(settings.isPremium === true);
+        
+        // Auto Paywall Check (12 hours cooldown)
+        if (!settings.isPremium && settings.isOnboarded !== false) {
+          const now = Date.now();
+          const COOLDOWN = 12 * 60 * 60 * 1000;
+          if (!settings.lastAutoPaywallTime || now - settings.lastAutoPaywallTime > COOLDOWN) {
+            setShowAutoPaywall(true);
+            await saveAppSettings({ lastAutoPaywallTime: now });
+          }
+        }
+
         await rescheduleDailyNotificationsIfGranted();
         await scheduleVisionCheckinNotification();
         await setupIAP();
@@ -86,17 +101,30 @@ export default function App() {
 
   useEffect(() => {
     const handleAppStateChange = (nextAppState) => {
-      if (
-        appState.current.match(/inactive|background/) &&
-        nextAppState === 'active' &&
-        authMethod !== 'none' &&
-        isOnboarded
-      ) {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         const now = Date.now();
-        if (now - lastAuthTime.current > 30000) {
-          setIsAuthenticated(false);
-          setShowPinScreen(false);
+        if (authMethod !== 'none' && isOnboarded) {
+          if (now - lastAuthTime.current > 30000) {
+            setIsAuthenticated(false);
+            setShowPinScreen(false);
+          }
         }
+        
+        // Auto Paywall Check on Resume
+        (async () => {
+          try {
+            const settings = await getAppSettings();
+            if (!settings.isPremium && settings.isOnboarded !== false) {
+              const COOLDOWN = 12 * 60 * 60 * 1000;
+              if (!settings.lastAutoPaywallTime || now - settings.lastAutoPaywallTime > COOLDOWN) {
+                setShowAutoPaywall(true);
+                await saveAppSettings({ lastAutoPaywallTime: now });
+              }
+            }
+          } catch (e) {
+            console.warn('[App] Auto paywall check error:', e);
+          }
+        })();
       }
       appState.current = nextAppState;
     };
@@ -109,6 +137,7 @@ export default function App() {
     const sub = DeviceEventEmitter.addListener(APP_SETTINGS_CHANGED, async () => {
       const settings = await getAppSettings();
       setIsOnboarded(settings.isOnboarded !== false);
+      setIsPremium(settings.isPremium === true);
       let method = settings.authMethod;
       if (!method) method = settings.biometricEnabled === false ? 'none' : 'biometric';
       setAuthMethod(method);
@@ -117,7 +146,17 @@ export default function App() {
         setIsAuthenticated(true);
       }
     });
-    return () => sub.remove();
+
+    // Session update listener from components
+    const sessionSub = DeviceEventEmitter.addListener('SESSION_AUTHENTICATED', () => {
+      lastAuthTime.current = Date.now();
+      setIsAuthenticated(true);
+    });
+
+    return () => {
+      sub.remove();
+      sessionSub.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -253,7 +292,12 @@ export default function App() {
           {showPinScreen ? (
             <PinAuth
               correctPin={pinCode}
-              onSuccess={() => { setShowPinScreen(false); setIsAuthenticated(true); fadeAnim.setValue(0); }}
+              onSuccess={() => { 
+                lastAuthTime.current = Date.now();
+                setShowPinScreen(false); 
+                setIsAuthenticated(true); 
+                fadeAnim.setValue(0); 
+              }}
               onBiometricFallback={authMethod === 'biometric' ? () => { setShowPinScreen(false); handleAuthentication(); } : null}
             />
           ) : (
@@ -306,6 +350,14 @@ export default function App() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Animated.View style={{ flex: 1, opacity: fadeAnim, backgroundColor: '#121212' }}>
           <RenderContent />
+          <PremiumPaywall 
+            visible={showAutoPaywall} 
+            onClose={() => setShowAutoPaywall(false)} 
+            onPurchaseSuccess={() => { 
+              setShowAutoPaywall(false); 
+              setIsPremium(true); 
+            }} 
+          />
         </Animated.View>
       </GestureHandlerRootView>
     </I18nProvider>
