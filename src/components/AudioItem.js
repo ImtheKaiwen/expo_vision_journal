@@ -26,6 +26,7 @@ export default function AudioItem({
   const [sound, setSound] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0);
+  const [isUnlocked, setIsUnlocked] = useState(false);
   const swipeableRef = useRef(null);
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function AudioItem({
 
   const checkAuth = async () => {
     if (!item.locked) return true;
+    if (isUnlocked) return true;
     
     const hasHardware = await LocalAuthentication.hasHardwareAsync();
     const isEnrolled = await LocalAuthentication.isEnrolledAsync();
@@ -50,6 +52,7 @@ export default function AudioItem({
     });
     
     if (result.success) {
+      setIsUnlocked(true);
       DeviceEventEmitter.emit('SESSION_AUTHENTICATED');
     }
     
@@ -74,12 +77,14 @@ export default function AudioItem({
 
     if (sound) {
       const status = await sound.getStatusAsync();
-      if (status.positionMillis >= status.durationMillis) {
+      if (status.positionMillis >= status.durationMillis - 200) {
         await sound.setPositionAsync(0);
       }
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       await sound.playAsync();
       setIsPlaying(true);
     } else {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       const { sound: newSound } = await Audio.Sound.createAsync(
         { uri: item.uri },
         { shouldPlay: true }
@@ -93,6 +98,7 @@ export default function AudioItem({
           if (status.didJustFinish) {
             setIsPlaying(false);
             setPosition(0);
+            newSound.setPositionAsync(0);
           }
         }
       });

@@ -86,14 +86,14 @@ export const transcribeAudio = async (uri) => {
 };
 
 export const analyzeMealImage = async (base64Image, userNote, lang = 'tr') => {
-  console.log('--- GEMINI 2.5 FLASH + GOOGLE SEARCH ANALİZİ ---');
+  console.log('--- GEMINI 2.5 FLASH ANALİZİ ---');
   const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
   if (!GEMINI_API_KEY) throw new Error('Gemini API Key missing');
 
   const promptText = `Analyze this meal image. First, identify the food items. 
-  Then, USE GOOGLE SEARCH to find the most accurate and up-to-date calories and macros for these specific items, especially considering any brand names or portions mentioned in this note: "${userNote}".
+  Then, use your extensive knowledge base to estimate the most accurate calories and macros for these specific items, taking into account any portions or brand names mentioned in this note: "${userNote}".
   
-  You must provide a realistic scientific breakdown.
+  You must provide a realistic scientific breakdown based on standard nutritional databases.
   
   Respond ONLY with valid JSON:
   {
@@ -104,7 +104,7 @@ export const analyzeMealImage = async (base64Image, userNote, lang = 'tr') => {
     "fat": 0,
     "carbs": 0,
     "estimatedWeightGrams": 0,
-    "reasoning": "Breakdown using live Google Search data - in ${lang === 'en' ? 'English' : 'Turkish'}.",
+    "reasoning": "Breakdown using estimated nutritional data - in ${lang === 'en' ? 'English' : 'Turkish'}.",
     "errorMessage": "Error message - in ${lang === 'en' ? 'English' : 'Turkish'}"
   }`;
 
@@ -120,8 +120,7 @@ export const analyzeMealImage = async (base64Image, userNote, lang = 'tr') => {
               inline_data: { mime_type: "image/jpeg", data: base64Image }
             }] : [])
           ]
-        }],
-        tools: [{ google_search: {} }]
+        }]
       })
     });
 
