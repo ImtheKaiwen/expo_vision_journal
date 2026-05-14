@@ -12,6 +12,7 @@ export const KEYS = {
   NUTRITION_SETTINGS: '@nutrition_settings',
   MEAL_LOGS: '@meal_logs',
   WATER_LOGS: '@water_logs',
+  AI_USAGE: '@ai_usage',
 };
 
 export const DEFAULT_APP_SETTINGS = {
@@ -195,7 +196,8 @@ export const DEFAULT_NUTRITION_SETTINGS = {
     protein: 150,
     carbs: 250,
     fat: 70
-  }
+  },
+  lastWeightUpdateDate: null,
 };
 
 export async function getNutritionSettings() {
@@ -254,4 +256,37 @@ export async function updateWaterLog(date, amount) {
   const next = { ...logs, [date]: Math.max(0, current + amount) };
   await AsyncStorage.setItem(KEYS.WATER_LOGS, JSON.stringify(next));
   return next;
+}
+
+export async function getAIUsage() {
+  const date = getLocalDateString();
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.AI_USAGE);
+    if (!raw) return 0;
+    const data = JSON.parse(raw);
+    return data[date] || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function incrementAIUsage() {
+  const date = getLocalDateString();
+  try {
+    const raw = await AsyncStorage.getItem(KEYS.AI_USAGE);
+    const data = raw ? JSON.parse(raw) : {};
+    const current = data[date] || 0;
+    const next = { ...data, [date]: current + 1 };
+    
+    // Sadece son 7 günü tutalım ki storage şişmesin (opsiyonel ama iyi olur)
+    const dates = Object.keys(next).sort();
+    if (dates.length > 7) {
+      delete next[dates[0]];
+    }
+
+    await AsyncStorage.setItem(KEYS.AI_USAGE, JSON.stringify(next));
+    return current + 1;
+  } catch {
+    return 0;
+  }
 }

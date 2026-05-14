@@ -1,5 +1,6 @@
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
 const CLAUDE_API_KEY = process.env.EXPO_PUBLIC_CLAUDE_API_KEY;
+import { getAIUsage, incrementAIUsage } from '../storage';
 
 export const generateAIPlan = async (userInput, existingTodos = [], currentDate = '', lang = 'tr') => {
   if (!OPENAI_API_KEY) throw new Error('OpenAI API Key missing');
@@ -90,6 +91,13 @@ export const analyzeMealImage = async (base64Image, userNote, lang = 'tr') => {
   const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
   if (!GEMINI_API_KEY) throw new Error('Gemini API Key missing');
 
+  // Limit kontrolü
+  const usage = await getAIUsage();
+  if (usage >= 50) {
+    const error = new Error('DAILY_LIMIT_REACHED');
+    throw error;
+  }
+
   const promptText = `Analyze this meal image. First, identify the food items. 
   Then, use your extensive knowledge base to estimate the most accurate calories and macros for these specific items, taking into account any portions or brand names mentioned in this note: "${userNote}".
   
@@ -135,6 +143,9 @@ export const analyzeMealImage = async (base64Image, userNote, lang = 'tr') => {
     if (!jsonMatch) throw new Error('Geçerli JSON bulunamadı');
     
     const parsed = JSON.parse(jsonMatch[0]);
+    if (parsed.isFood) {
+      await incrementAIUsage();
+    }
     return { ...parsed, success: parsed.isFood };
   } catch (error) {
     console.error('Meal Gemini Analysis Error:', error);

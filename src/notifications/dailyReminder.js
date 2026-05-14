@@ -84,8 +84,78 @@ async function scheduleDailyFromSettings(settings) {
   // Morning Notification
   await scheduleSingleNotification(morningHour, morningMinute, lang, quotesEnabled);
   
+  // Lunch Notification (13:00)
+  await scheduleTypeNotification(13, 0, lang, 'lunch');
+
+  // Water Notification (16:00)
+  await scheduleTypeNotification(16, 0, lang, 'water');
+
+  // Dinner Notification (20:00)
+  await scheduleTypeNotification(20, 0, lang, 'dinner');
+
+  // Weekly Weight Notification (Saturday 10:00 AM)
+  const today = new Date();
+  if (today.getDay() === 6) { // Saturday
+    await scheduleTypeNotification(10, 0, lang, 'weight');
+  }
+
   // Evening Notification (Fixed at 21:00)
   await scheduleSingleNotification(21, 0, lang, quotesEnabled);
+}
+
+async function scheduleTypeNotification(hour, minute, lang, type) {
+  let title = '';
+  let body = '';
+
+  if (type === 'lunch') {
+    title = t_alt('notifLunchTitle', lang);
+    body = t_alt('notifLunchBody', lang);
+  } else if (type === 'water') {
+    title = t_alt('notifWaterTitle', lang);
+    body = t_alt('notifWaterBody', lang);
+  } else if (type === 'dinner') {
+    title = t_alt('notifDinnerTitle', lang);
+    body = t_alt('notifDinnerBody', lang);
+  } else if (type === 'weight') {
+    title = t_alt('notifWeightTitle', lang);
+    body = t_alt('notifWeightBody', lang);
+  }
+
+  await Notifications.scheduleNotificationAsync({
+    content: { title, body },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
+      hour,
+      minute,
+      repeats: true,
+    },
+  });
+}
+
+/** Helper for translations in notifications (since we can't use useI18n hook here) */
+function t_alt(key, lang) {
+  const tr = {
+    notifLunchTitle: 'Öğle Yemeği Vakti',
+    notifLunchBody: 'Yemeğinin fotoğrafını çekmeyi veya analiz etmeyi unutma!',
+    notifWaterTitle: 'Su Hatırlatıcı',
+    notifWaterBody: 'Vücudunun suya ihtiyacı var. Bir bardak su içmeye ne dersin?',
+    notifDinnerTitle: 'Akşam Yemeği Vakti',
+    notifDinnerBody: 'Günün son öğününü kaydetmeyi ve analiz etmeyi unutma.',
+    notifWeightTitle: 'Kilo Takibi Vakti',
+    notifWeightBody: 'Haftalık kilonu güncelleyerek ilerlemeni takip etmeye ne dersin?',
+  };
+  const en = {
+    notifLunchTitle: 'Lunch Time',
+    notifLunchBody: 'Don\'t forget to take a photo or analyze your meal!',
+    notifWaterTitle: 'Water Reminder',
+    notifWaterBody: 'Your body needs water. How about a glass of water?',
+    notifDinnerTitle: 'Dinner Time',
+    notifDinnerBody: 'Don\'t forget to log and analyze your last meal of the day.',
+    notifWeightTitle: 'Weight Tracking Time',
+    notifWeightBody: 'How about tracking your progress by updating your weekly weight?',
+  };
+  const dict = lang === 'en' ? en : tr;
+  return dict[key] || key;
 }
 
 async function scheduleSingleNotification(hour, minute, lang, quotesEnabled) {

@@ -24,6 +24,7 @@ import {
 } from '../storage';
 import NutritionOnboarding from '../components/NutritionOnboarding';
 import MealAddModal from '../components/MealAddModal';
+import WeightUpdateModal from '../components/WeightUpdateModal';
 import PremiumPaywall from '../components/PremiumPaywall';
 import { getLocalDateString } from '../utils/journalDates';
 import { checkPremiumStatus } from '../services/iapService';
@@ -59,6 +60,7 @@ export default function NutritionScreen() {
     weeklyWater: [],
     topFoods: [],
   });
+  const [showWeightModal, setShowWeightModal] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -139,6 +141,13 @@ export default function NutritionScreen() {
         topFoods,
       });
 
+      // Kilo Güncelleme Kontrolü
+      const dayOfWeek = new Date().getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Pazar veya Cumartesi
+      if (isActuallyPremium && isWeekend && s.lastWeightUpdateDate !== today) {
+        setShowWeightModal(true);
+      }
+
       const grouped = allMeals.reduce((acc, m) => {
         if (!acc[m.date]) acc[m.date] = { date: m.date, cal: 0, count: 0, meals: [] };
         acc[m.date].cal += m.calories || 0;
@@ -201,6 +210,16 @@ export default function NutritionScreen() {
         },
       },
     ]);
+  };
+
+  const handleWeightUpdate = async (newWeight) => {
+    await saveNutritionSettings({ 
+      weight: newWeight, 
+      lastWeightUpdateDate: today 
+    });
+    setShowWeightModal(false);
+    loadData();
+    Alert.alert(t('success'), t('updateSuccess') || 'Kilonuz başarıyla güncellendi.');
   };
 
   if (!settings) return null;
@@ -567,6 +586,13 @@ export default function NutritionScreen() {
       </TouchableOpacity>
 
       <MealAddModal visible={showAddModal} onClose={() => setShowAddModal(false)} onSuccess={loadData} />
+
+      <WeightUpdateModal
+        visible={showWeightModal}
+        currentWeight={settings.weight}
+        onUpdate={handleWeightUpdate}
+        onSkip={() => setShowWeightModal(false)}
+      />
 
       <PremiumPaywall
         visible={showPaywall}

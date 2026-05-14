@@ -107,7 +107,11 @@ export default function MealAddModal({ visible, onClose, onSuccess }) {
       }
     } catch (error) {
       console.error('Meal Analysis Error:', error);
-      Alert.alert(t('error'), t('mealAnalysisError'));
+      if (error.message === 'DAILY_LIMIT_REACHED') {
+        Alert.alert(t('aiLimitReachedTitle'), t('aiLimitReachedMsg'));
+      } else {
+        Alert.alert(t('error'), t('mealAnalysisError'));
+      }
     } finally {
       setLoading(false);
     }
